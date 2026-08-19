@@ -1,12 +1,15 @@
 # 对账运行 + 结果查询 + 导出 API
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Customer
 from app.schemas import (
+    HistoryResponse,
     MatchSummaryResponse,
     ReconciliationRunResponse,
 )
@@ -74,15 +77,19 @@ def export_reconciliation(
 
     output = ExportService.export_reconciliation(customer_id, period, customer_name, db)
 
+    # RFC 5987 编码中文文件名，兼容所有浏览器
     filename = f"对账结果_{customer_name}_{period}.xlsx"
-    return StreamingResponse(
-        output,
+    encoded_filename = quote(filename)
+    return Response(
+        content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
     )
 
 
-@router.get("/history")
+@router.get("/history", response_model=HistoryResponse)
 def get_reconciliation_history(
     customer_id: int = Query(None, description="客户 ID（可选）"),
     start_month: str = Query(None, description="起始月份 YYYYMM"),

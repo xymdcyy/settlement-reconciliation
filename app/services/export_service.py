@@ -40,7 +40,8 @@ class ExportService:
         # ============================================================
         # Sheet1: 对账汇总
         # ============================================================
-        matched = [r for r in results if r.status == "matched"]
+        # 手动匹配 (manual) 也计入已匹配
+        matched = [r for r in results if r.status in ("matched", "manual")]
         unmatched_receipt = [r for r in results if r.status == "unmatched" and r.receipt_id]
         unmatched_settlement = [r for r in results if r.status == "unmatched" and r.settlement_id]
         ignored = [r for r in results if r.status == "ignored"]
@@ -74,22 +75,25 @@ class ExportService:
             s = settlements.get(r.settlement_id)
             match_detail.append({
                 "匹配类型": r.match_type,
-                "置信度": float(r.confidence) if r.confidence else "",
+                "置信度": float(r.confidence) if r.confidence is not None else "",
                 "我方-销售单号": rec.receipt_no if rec else "",
                 "我方-型号": rec.model if rec else "",
-                "我方-数量": float(rec.quantity) if rec and rec.quantity else "",
-                "我方-金额": float(rec.amount) if rec and rec.amount else "",
+                "我方-数量": float(rec.quantity) if rec and rec.quantity is not None else "",
+                "我方-金额": float(rec.amount) if rec and rec.amount is not None else "",
                 "我方-日期": rec.receipt_date if rec else "",
                 "客户-匹配键": s.match_key if s else "",
                 "客户-型号": s.model if s else "",
-                "客户-数量": float(s.quantity) if s and s.quantity else "",
-                "客户-金额": float(s.amount) if s and s.amount else "",
+                "客户-数量": float(s.quantity) if s and s.quantity is not None else "",
+                "客户-金额": float(s.amount) if s and s.amount is not None else "",
                 "客户-日期": s.settlement_date if s else "",
-                "金额差异": float(r.diff_amount) if r.diff_amount else "",
-                "数量差异": float(r.diff_quantity) if r.diff_quantity else "",
+                "金额差异": float(r.diff_amount) if r.diff_amount is not None else "",
+                "数量差异": float(r.diff_quantity) if r.diff_quantity is not None else "",
                 "备注": r.remark or "",
             })
-        df_match = pd.DataFrame(match_detail) if match_detail else pd.DataFrame([{"信息": "无匹配记录"}])
+        df_match = pd.DataFrame(match_detail) if match_detail else pd.DataFrame(columns=[
+            "匹配类型", "置信度", "我方-销售单号", "我方-型号", "我方-数量", "我方-金额", "我方-日期",
+            "客户-匹配键", "客户-型号", "客户-数量", "客户-金额", "客户-日期", "金额差异", "数量差异", "备注",
+        ])
 
         # ============================================================
         # Sheet3: 我方已签收客户未结算
@@ -100,13 +104,15 @@ class ExportService:
             our_only.append({
                 "销售单号": rec.receipt_no if rec else "",
                 "型号": rec.model if rec else "",
-                "数量": float(rec.quantity) if rec and rec.quantity else "",
-                "金额": float(rec.amount) if rec and rec.amount else "",
+                "数量": float(rec.quantity) if rec and rec.quantity is not None else "",
+                "金额": float(rec.amount) if rec and rec.amount is not None else "",
                 "签收日期": rec.receipt_date if rec else "",
                 "单据类型": rec.doc_type if rec else "",
                 "NC订单号": rec.nc_order_no if rec else "",
             })
-        df_our_only = pd.DataFrame(our_only) if our_only else pd.DataFrame([{"信息": "无记录"}])
+        df_our_only = pd.DataFrame(our_only) if our_only else pd.DataFrame(columns=[
+            "销售单号", "型号", "数量", "金额", "签收日期", "单据类型", "NC订单号",
+        ])
 
         # ============================================================
         # Sheet4: 客户已结算我方未签收
@@ -117,12 +123,14 @@ class ExportService:
             settlement_only.append({
                 "匹配键": s.match_key if s else "",
                 "型号": s.model if s else "",
-                "数量": float(s.quantity) if s and s.quantity else "",
-                "金额": float(s.amount) if s and s.amount else "",
+                "数量": float(s.quantity) if s and s.quantity is not None else "",
+                "金额": float(s.amount) if s and s.amount is not None else "",
                 "业务日期": s.settlement_date if s else "",
                 "单据类型": s.doc_type if s else "",
             })
-        df_settlement_only = pd.DataFrame(settlement_only) if settlement_only else pd.DataFrame([{"信息": "无记录"}])
+        df_settlement_only = pd.DataFrame(settlement_only) if settlement_only else pd.DataFrame(columns=[
+            "匹配键", "型号", "数量", "金额", "业务日期", "单据类型",
+        ])
 
         # ============================================================
         # Sheet5: 金额差异明细
@@ -130,17 +138,21 @@ class ExportService:
         diff_detail = []
         for r in matched:
             rec = receipts.get(r.receipt_id)
-            if r.diff_amount:
+            s = settlements.get(r.settlement_id)
+            # 明确检查 diff_amount 是否不为 None（包括 Decimal('0.00')）
+            if r.diff_amount is not None:
                 diff_detail.append({
                     "匹配类型": r.match_type,
                     "我方-销售单号": rec.receipt_no if rec else "",
                     "我方-型号": rec.model if rec else "",
-                    "我方金额": float(rec.amount) if rec and rec.amount else 0,
-                    "客户金额": float(settlements[r.settlement_id].amount) if r.settlement_id in settlements and settlements[r.settlement_id].amount else 0,
+                    "我方金额": float(rec.amount) if rec and rec.amount is not None else 0,
+                    "客户金额": float(s.amount) if s and s.amount is not None else 0,
                     "金额差异": float(r.diff_amount),
-                    "数量差异": float(r.diff_quantity) if r.diff_quantity else 0,
+                    "数量差异": float(r.diff_quantity) if r.diff_quantity is not None else 0,
                 })
-        df_diff = pd.DataFrame(diff_detail) if diff_detail else pd.DataFrame([{"信息": "无金额差异记录"}])
+        df_diff = pd.DataFrame(diff_detail) if diff_detail else pd.DataFrame(columns=[
+            "匹配类型", "我方-销售单号", "我方-型号", "我方金额", "客户金额", "金额差异", "数量差异",
+        ])
 
         # ============================================================
         # 写入 Excel
@@ -163,7 +175,7 @@ class ExportService:
                             cell_len = len(str(cell.value or ""))
                             if cell_len > max_len:
                                 max_len = cell_len
-                        except:
+                        except Exception:
                             pass
                     adjusted_width = min(max_len + 4, 50)
                     ws.column_dimensions[col[0].column_letter].width = adjusted_width
@@ -194,14 +206,18 @@ class ExportService:
                 groups[key] = {"results": []}
             groups[key]["results"].append(r)
 
-        # 获取客户名称
+        # 获取客户名称（避免空集合 IN() 查询）
         customer_ids = {k[0] for k in groups}
-        customers = {c.id: c.name for c in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()}
+        if customer_ids:
+            customers = {c.id: c.name for c in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()}
+        else:
+            customers = {}
 
         result = []
         for (cid, per), data in groups.items():
             grp = data["results"]
-            matched = sum(1 for r in grp if r.status == "matched")
+            # manual 状态也计入已匹配
+            matched = sum(1 for r in grp if r.status in ("matched", "manual"))
             unmatched_receipt = sum(1 for r in grp if r.status == "unmatched" and r.receipt_id is not None)
             unmatched_settlement = sum(1 for r in grp if r.status == "unmatched" and r.settlement_id is not None)
             total_matchable = matched + unmatched_receipt

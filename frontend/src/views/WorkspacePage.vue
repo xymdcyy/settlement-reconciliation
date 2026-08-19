@@ -105,7 +105,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   getCustomers,
   runReconciliation,
@@ -115,8 +116,10 @@ import {
 import ComparisonTable from '../components/ComparisonTable.vue'
 import CorrectionPanel from '../components/CorrectionPanel.vue'
 
-// 查询条件
-const query = ref({ customerId: '', period: '' })
+const route = useRoute()
+
+// 查询条件 — 从路由参数读取初始值（历史页面跳转时传入）
+const query = ref({ customerId: route.query.customer_id || '', period: route.query.period || '' })
 const customers = ref([])
 const canQuery = computed(() => query.value.customerId && query.value.period)
 
@@ -204,5 +207,21 @@ onMounted(async () => {
   } catch {
     customers.value = []
   }
+  // 如果从历史页面携带参数跳转，自动加载数据
+  if (query.value.customerId && query.value.period) {
+    await loadData()
+  }
 })
+
+// 监听路由参数变化（同一页面内参数变化时重新加载）
+watch(
+  () => [route.query.customer_id, route.query.period],
+  ([newCid, newPeriod]) => {
+    if (newCid && newPeriod) {
+      query.value.customerId = newCid
+      query.value.period = newPeriod
+      loadData()
+    }
+  }
+)
 </script>

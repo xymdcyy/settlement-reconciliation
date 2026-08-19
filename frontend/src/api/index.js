@@ -143,16 +143,39 @@ export function getUploadHistory(limit = 20) {
 }
 
 /**
- * 导出对账结果 Excel
+ * 导出对账结果 Excel（通过 axios 下载，保留错误处理和认证）
  * @param {number} customerId
  * @param {string} period
  */
 export function exportReconciliation(customerId, period) {
-  const url = `/api/reconciliation/export?customer_id=${customerId}&period=${period}`
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `对账结果_${customerId}_${period}.xlsx`
-  a.click()
+  // 通过 axios 直接请求以获取 blob 和响应头
+  axios({
+    method: 'get',
+    url: '/api/reconciliation/export',
+    params: { customer_id: customerId, period },
+    responseType: 'blob',
+    timeout: 120000,
+  }).then((response) => {
+    // 从响应头获取文件名
+    const disposition = response.headers?.['content-disposition'] || ''
+    let filename = `对账结果_${customerId}_${period}.xlsx`
+    const match = disposition.match(/filename\*?=UTF-8''([^;]+)/i)
+    if (match) {
+      filename = decodeURIComponent(match[1])
+    }
+    // 创建下载链接
+    const url = URL.createObjectURL(response.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }).catch((error) => {
+    const msg = error.response?.data?.detail || error.message || '导出失败'
+    ElMessage.error(msg)
+  })
 }
 
 /**
