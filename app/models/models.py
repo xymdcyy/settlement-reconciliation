@@ -201,3 +201,23 @@ class EngineConfig(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<EngineConfig(id={self.id}, engine='{self.engine_name}')>"
+
+
+class UploadHistory(Base, TimestampMixin):
+    """上传历史记录"""
+
+    __tablename__ = "upload_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    upload_type = Column(Text, nullable=False, comment="our / settlement")
+    customer_id = Column(Integer, nullable=True, comment="关联客户ID（我方上传为0）")
+    customer_name = Column(Text, nullable=True, comment="客户名称")
+    period = Column(Text, nullable=False, index=True, comment="对账期间 YYYYMM")
+    file_name = Column(Text, nullable=True, comment="原始文件名")
+    total = Column(Integer, default=0, comment="总行数")
+    parsed = Column(Integer, default=0, comment="解析行数")
+    status = Column(Text, default="success", comment="success / failed")
+    message = Column(Text, nullable=True, comment="结果消息")
+
+    def __repr__(self):
+        return f"<UploadHistory(id={self.id}, type='{self.upload_type}', period='{self.period}')>"

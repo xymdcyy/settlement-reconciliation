@@ -1,11 +1,13 @@
 # 上传 API 路由
 
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.models import UploadHistory
 from app.schemas import (
     OurReceiptUploadResponse,
     SettlementUploadResponse,
@@ -57,3 +59,32 @@ async def upload_settlements(
         with_match_key=result["with_match_key"],
         message=result["message"],
     )
+
+
+@router.get("/history")
+def get_upload_history(
+    limit: int = Query(20, description="返回条数"),
+    db: Session = Depends(get_db),
+):
+    """获取上传历史记录"""
+    records = (
+        db.query(UploadHistory)
+        .order_by(UploadHistory.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "type": r.upload_type,
+            "customer_name": r.customer_name,
+            "period": r.period,
+            "file_name": r.file_name,
+            "total": r.total,
+            "parsed": r.parsed,
+            "status": r.status,
+            "message": r.message,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in records
+    ]

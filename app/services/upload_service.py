@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.engines import get_engine
-from app.models import Customer, CustomerSettlement, OurReceipt
+from app.models import Customer, CustomerSettlement, OurReceipt, UploadHistory
 
 
 class UploadService:
@@ -106,6 +106,21 @@ class UploadService:
 
         db.commit()
 
+        # 记录上传历史
+        history = UploadHistory(
+            upload_type="our",
+            customer_id=0,
+            customer_name="我方签收",
+            period=period,
+            file_name=file_path.name,
+            total=total,
+            parsed=sum(assigned.values()),
+            status="success",
+            message=f"导入成功：{sum(assigned.values())} 条分配到客户，{unassigned} 条未分配",
+        )
+        db.add(history)
+        db.commit()
+
         return {
             "total": total,
             "assigned_to_customers": assigned,
@@ -167,6 +182,21 @@ class UploadService:
             if s.match_key:
                 with_match_key += 1
 
+        db.commit()
+
+        # 记录上传历史
+        history = UploadHistory(
+            upload_type="settlement",
+            customer_id=customer_id,
+            customer_name=f"客户ID:{customer_id}",
+            period=period,
+            file_name=file_path.name,
+            total=total,
+            parsed=len(settlements),
+            status="success",
+            message=f"解析成功：{len(settlements)} 条，其中 {with_match_key} 条含匹配键",
+        )
+        db.add(history)
         db.commit()
 
         return {

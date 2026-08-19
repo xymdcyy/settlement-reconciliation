@@ -5,6 +5,7 @@ from app.models.models import (
     EngineConfig,
     MatchResult,
     OurReceipt,
+    UploadHistory,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "MatchResult",
     "CorrectionLog",
     "EngineConfig",
+    "UploadHistory",
 ]
