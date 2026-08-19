@@ -43,6 +43,8 @@ def health():
 
 
 # 路由挂载
-from app.routers import upload  # noqa: E402
+from app.routers import upload, reconciliation, corrections  # noqa: E402
 
 app.include_router(upload.router)
+app.include_router(reconciliation.router)
+app.include_router(corrections.router)
