@@ -1,14 +1,17 @@
-# 对账运行 + 结果查询 API
+# 对账运行 + 结果查询 + 导出 API
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models import Customer
 from app.schemas import (
     MatchSummaryResponse,
     ReconciliationRunResponse,
 )
 from app.services.match_service import MatchService
+from app.services.export_service import ExportService
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
@@ -57,3 +60,35 @@ def get_reconciliation_results(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/export")
+def export_reconciliation(
+    customer_id: int = Query(..., description="客户 ID"),
+    period: str = Query(..., description="对账期间 YYYYMM"),
+    db: Session = Depends(get_db),
+):
+    """导出对账结果 Excel"""
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    customer_name = customer.name if customer else f"客户{customer_id}"
+
+    output = ExportService.export_reconciliation(customer_id, period, customer_name, db)
+
+    filename = f"对账结果_{customer_name}_{period}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/history")
+def get_reconciliation_history(
+    customer_id: int = Query(None, description="客户 ID（可选）"),
+    start_month: str = Query(None, description="起始月份 YYYYMM"),
+    end_month: str = Query(None, description="结束月份 YYYYMM"),
+    db: Session = Depends(get_db),
+):
+    """获取历史对账记录摘要"""
+    items = ExportService.get_history(db, customer_id, start_month, end_month)
+    return {"items": items}

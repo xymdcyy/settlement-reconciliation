@@ -142,4 +142,29 @@ export function getUploadHistory(limit = 20) {
   return api.get('/upload/history', { params: { limit } })
 }
 
+/**
+ * 导出对账结果 Excel
+ * @param {number} customerId
+ * @param {string} period
+ */
+export function exportReconciliation(customerId, period) {
+  const url = `/api/reconciliation/export?customer_id=${customerId}&period=${period}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `对账结果_${customerId}_${period}.xlsx`
+  a.click()
+}
+
+/**
+ * 获取历史对账记录
+ * @param {object} params
+ * @param {number} [params.customer_id]
+ * @param {string} [params.start_month]
+ * @param {string} [params.end_month]
+ * @returns {Promise<{items: Array}>}
+ */
+export function getReconciliationHistory(params) {
+  return api.get('/reconciliation/history', { params })
+}
+
 export default api
