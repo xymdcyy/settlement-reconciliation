@@ -42,9 +42,7 @@ def health():
     return {"status": "ok"}
 
 
-# 路由挂载（后续 ticket 添加）
-# from app.routers import upload, reconciliation, corrections, history
-# app.include_router(upload.router, prefix="/api")
-# app.include_router(reconciliation.router, prefix="/api")
-# app.include_router(corrections.router, prefix="/api")
-# app.include_router(history.router, prefix="/api")
+# 路由挂载
+from app.routers import upload  # noqa: E402
+
+app.include_router(upload.router)
