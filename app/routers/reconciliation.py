@@ -12,6 +12,7 @@ from app.schemas import (
     HistoryResponse,
     MatchSummaryResponse,
     ReconciliationRunResponse,
+    RunReconciliationRequest,
 )
 from app.services.match_service import MatchService
 from app.services.export_service import ExportService
@@ -21,12 +22,11 @@ router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
 @router.post("/run", response_model=ReconciliationRunResponse)
 def run_reconciliation(
-    customer_id: int = Query(..., description="客户 ID"),
-    period: str = Query(..., description="对账期间 YYYYMM"),
+    request: RunReconciliationRequest,
     db: Session = Depends(get_db),
 ):
     """运行自动匹配"""
-    result = MatchService.run(customer_id, period, db)
+    result = MatchService.run(request.customer_id, request.period, db)
     return ReconciliationRunResponse(
         status=result["status"],
         summary=MatchSummaryResponse(**result["summary"]) if result["summary"] else MatchSummaryResponse(),

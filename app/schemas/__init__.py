@@ -139,6 +139,11 @@ class ReconciliationRunResponse(BaseModel):
 # 手动纠正 (Correction)
 # ============================================================
 
+class RunReconciliationRequest(BaseModel):
+    customer_id: int = Field(..., description="客户 ID")
+    period: str = Field(..., description="对账期间 YYYYMM")
+
+
 class ManualMatchRequest(BaseModel):
     customer_id: int
     period: str
