@@ -78,6 +78,13 @@ class Customer(Base, TimestampMixin):
         comment="结算客户名称归属关键词列表；我方明细的结算客户名称需包含全部关键词才归属该客户",
     )
 
+    # 一对一引擎配置（EngineConfig.customer_id 唯一），与 EngineConfig.customer 成对。
+    engine_config = relationship(
+        "EngineConfig",
+        back_populates="customer",
+        uselist=False,
+    )
+
     def __repr__(self):
         return f"<Customer(id={self.id}, name='{self.name}', slug='{self.slug}')>"
 
@@ -202,7 +209,7 @@ class EngineConfig(Base, TimestampMixin):
     config_params = Column(JsonType, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
 
-    customer = relationship("Customer", backref="engine_config")
+    customer = relationship("Customer", back_populates="engine_config")
 
     def __repr__(self):
         return f"<EngineConfig(id={self.id}, engine='{self.engine_name}')>"

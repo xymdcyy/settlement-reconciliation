@@ -25,6 +25,10 @@
             <el-icon><Clock /></el-icon>
             <span>历史查询</span>
           </el-menu-item>
+          <el-menu-item index="/customers">
+            <el-icon><User /></el-icon>
+            <span>客户管理</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -39,7 +43,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Upload, DataBoard, Clock } from '@element-plus/icons-vue'
+import { Upload, DataBoard, Clock, User } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const currentRoute = computed(() => route.path)

@@ -11,6 +11,13 @@ _ENGINE_REGISTRY: dict[int, tuple[str, str]] = {
     2: ("app.engines.chongbai.engine", "ChongbaiEngine"),  # 重庆百货智屏
 }
 
+# 引擎名 → (模块路径, 类名)（供客户管理界面绑定引擎时选择）
+AVAILABLE_ENGINES: dict[str, tuple[str, str]] = {
+    "tmall": ("app.engines.tmall.engine", "TmallEngine"),
+    "chongbai": ("app.engines.chongbai.engine", "ChongbaiEngine"),
+    "template": ("app.engines.template.engine", "TemplateEngine"),
+}
+
 
 def get_engine(customer_id: int) -> Optional[MatchEngine]:
     """根据客户ID获取引擎实例"""
@@ -21,6 +28,20 @@ def get_engine(customer_id: int) -> Optional[MatchEngine]:
     module = importlib.import_module(module_path)
     engine_class = getattr(module, class_name)
     return engine_class()
+
+
+def get_engine_by_name(engine_name: str) -> Optional[MatchEngine]:
+    """按引擎名获取实例（校验/预览用）"""
+    info = AVAILABLE_ENGINES.get(engine_name)
+    if not info:
+        return None
+    module = importlib.import_module(info[0])
+    return getattr(module, info[1])()
+
+
+def list_available_engines() -> list[str]:
+    """列出所有可绑定的引擎名"""
+    return list(AVAILABLE_ENGINES.keys())
 
 
 def register_engine(customer_id: int, module_path: str, class_name: str):

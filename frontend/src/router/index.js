@@ -23,6 +23,12 @@ const routes = [
     component: () => import('../views/HistoryPage.vue'),
     meta: { title: '历史查询' },
   },
+  {
+    path: '/customers',
+    name: 'Customers',
+    component: () => import('../views/CustomersPage.vue'),
+    meta: { title: '客户管理' },
+  },
 ]
 
 const router = createRouter({

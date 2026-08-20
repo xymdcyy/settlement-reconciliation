@@ -134,6 +134,34 @@ export function getCustomers() {
 }
 
 /**
+ * 获取可绑定的匹配引擎列表
+ * @returns {Promise<Array<string>>}
+ */
+export function getAvailableEngines() {
+  return api.get('/customers/engines')
+}
+
+/** 新建客户 */
+export function createCustomer(data) {
+  return api.post('/customers', data)
+}
+
+/** 更新客户 */
+export function updateCustomer(id, data) {
+  return api.put(`/customers/${id}`, data)
+}
+
+/** 删除（停用）客户 */
+export function deleteCustomer(id) {
+  return api.delete(`/customers/${id}`)
+}
+
+/** 绑定/更新客户引擎 */
+export function bindEngine(id, data) {
+  return api.put(`/customers/${id}/engine`, data)
+}
+
+/**
  * 获取上传历史
  * @param {number} [limit=20]
  * @returns {Promise<Array>}

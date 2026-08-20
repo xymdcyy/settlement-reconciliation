@@ -16,6 +16,46 @@ class CustomerCreate(BaseModel):
     slug: str = Field(..., description="客户标识（英文小写）")
     description: Optional[str] = None
     is_active: bool = True
+    match_keywords: Optional[list[str]] = Field(default=None, description="结算客户名称归属关键词（含全部关键词即归属）")
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    match_keywords: Optional[list[str]] = None
+
+
+class EngineConfigPayload(BaseModel):
+    engine_name: str = Field(..., description="引擎类名（如 tmall/chongbai）")
+    engine_version: Optional[str] = None
+    config_params: Optional[dict[str, Any]] = None
+    is_active: bool = True
+
+
+class EngineConfigResponse(BaseModel):
+    id: int
+    customer_id: int
+    engine_name: Optional[str] = None
+    engine_version: Optional[str] = None
+    config_params: Optional[dict[str, Any]] = None
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class CustomerDetailResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_active: bool
+    match_keywords: Optional[list[str]] = None
+    created_at: Optional[datetime] = None
+    engine_config: Optional[EngineConfigResponse] = None
+
+    model_config = {"from_attributes": True}
 
 
 class CustomerResponse(BaseModel):
