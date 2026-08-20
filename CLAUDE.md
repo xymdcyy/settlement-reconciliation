@@ -35,6 +35,10 @@ uvicorn app.main:app --reload
 python -m app.engines.tmall.engine --year 2026 --month 5
 ```
 
+> **本地环境须知（重要）**
+> - **不要用裸 `python`**：本机 `python` 指向 Windows 商店占位 stub（无输出、退出码 49，解释器根本没运行）。一律用 uv 创建的 `.venv/Scripts/python.exe` 或 `uv run`。例如跑测试用 `.venv/Scripts/python.exe -m pytest`。
+> - **推送 GitHub 用 `gh-push.py`**：`git push`（github.com:443）常被防火墙拦截（而 api.github.com 可达）。改用 `.venv/Scripts/python.exe scripts/gh-push.py`——它经 GitHub API 精确复现本地 commit SHA、快进推送并同步本地跟踪 ref，保证本地/远端 SHA 一致、不产生分叉；对中文文件名安全。**勿用** `scripts/` 下的 `api_push.py` / `full_push.py` / `push_commit.py` 等旧脚本（有中文路径 bug，会污染远端）。
+
 ## Project Structure
 
 ```
