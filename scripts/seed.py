@@ -22,6 +22,10 @@ def seed():
             slug="tmall",
             description="天猫优品经销客户，使用 TmallEngine 匹配引擎",
             is_active=True,
+            # 我方明细的“结算客户名称”为分公司法人全称
+            # （如“张家口天猫优品电子商务有限公司-经销”），
+            # 需同时包含以下全部关键词才归属本客户
+            match_keywords=["天猫优品", "经销"],
         )
         db.add(tmall)
         db.flush()

@@ -108,6 +108,36 @@ class TestMatchService:
         assert summary["matched_count"] >= 2
         assert summary["match_rate"] > 0
 
+    def test_match_rate_is_settlement_driven(self, db_session, customer):
+        """匹配率以结算单为口径：我方笔数远多于结算单时，全部结算单匹配即 100%。
+
+        回归测试：旧实现用“我方签收笔数”作分母（此处 2/5=40%），
+        会把匹配率严重低估；正确口径为 已匹配结算单/结算单总数 = 2/2 = 100%。
+        """
+        register_engine(customer.id, "app.engines.template.engine", "TemplateEngine")
+
+        # 5 笔我方签收，仅 2 笔能对上结算单
+        for i, pon in enumerate(["PON001", "PON002", "PONX1", "PONX2", "PONX3"], start=1):
+            db_session.add(OurReceipt(receipt_no=f"S{i}", customer_id=customer.id,
+                                      period="202607", model="75N9M", quantity=1,
+                                      amount=100.0, nc_order_no=pon))
+        # 2 笔结算单，均可匹配
+        db_session.add(CustomerSettlement(customer_id=customer.id, period="202607",
+                                          match_key="PON001", model="75N9M",
+                                          quantity=1, amount=100.0))
+        db_session.add(CustomerSettlement(customer_id=customer.id, period="202607",
+                                          match_key="PON002", model="75N9M",
+                                          quantity=1, amount=100.0))
+        db_session.commit()
+
+        result = MatchService.run(customer.id, "202607", db_session)
+        assert result["summary"]["matched_count"] == 2
+        assert result["summary"]["unmatched_receipts"] == 3
+        assert result["summary"]["match_rate"] == 100.0  # 2/2，而非旧口径 2/5=40%
+
+        summary = MatchService.get_summary(customer.id, "202607", db_session)
+        assert summary["match_rate"] == 100.0
+
     def test_get_results(self, db_session, test_data):
         """查询匹配结果"""
         MatchService.run(test_data["customer"].id, "202601", db_session)

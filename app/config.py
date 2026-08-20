@@ -1,19 +1,26 @@
 # 结算对账平台配置
 
+import os
 from pathlib import Path
 from typing import Optional
 
 
 class Settings:
-    """应用配置"""
+    """应用配置
+
+    关键项支持通过环境变量覆盖，便于在不同环境（开发 SQLite / 生产 PostgreSQL）
+    和隔离测试之间切换，而无需改动代码。
+    """
 
     # 数据库
-    # 开发环境使用 SQLite，生产环境通过环境变量 DATABASE_URL 切换 PostgreSQL
-    DATABASE_URL: str = "sqlite:///./settlement_reconciliation.db"
+    # 开发环境默认使用 SQLite，生产环境通过环境变量 DATABASE_URL 切换 PostgreSQL
     # 例如 PostgreSQL: "postgresql://user:password@host:5432/dbname"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./settlement_reconciliation.db")
 
-    # 上传文件存储目录
-    UPLOAD_DIR: str = str(Path(__file__).resolve().parent.parent / "uploads")
+    # 上传文件存储目录（可通过环境变量 UPLOAD_DIR 覆盖）
+    UPLOAD_DIR: str = os.getenv(
+        "UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads")
+    )
 
     # CORS 允许的前端地址
     CORS_ORIGINS: list[str] = [

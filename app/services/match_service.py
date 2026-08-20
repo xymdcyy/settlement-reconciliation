@@ -136,8 +136,9 @@ class MatchService:
         matched_count = len(result.matched_pairs)
         unmatched_receipts = len(result.unmatched_receipts)
         unmatched_settlements = len(result.unmatched_settlements)
-        total = matched_count + unmatched_receipts
-        match_rate = round(matched_count / total * 100, 2) if total > 0 else 0.0
+        # 匹配率以“客户结算单”为口径：已匹配结算单 / 结算单总数。
+        # 我方签收笔数（万级）远多于结算单（百级），若用签收笔数作分母会严重低估匹配率。
+        match_rate = round(matched_count / total_settlements * 100, 2) if total_settlements > 0 else 0.0
 
         # 计算金额差异
         total_amount_diff = sum(p.diff_amount for p in result.matched_pairs)
@@ -187,8 +188,11 @@ class MatchService:
         receipt_ids = set(r.receipt_id for r in results if r.receipt_id is not None)
         settlement_ids = set(r.settlement_id for r in results if r.settlement_id is not None)
 
-        total_matchable = matched_count + sum(1 for r in results if r.status == "unmatched" and r.receipt_id is not None)
-        match_rate = round(matched_count / total_matchable * 100, 2) if total_matchable > 0 else 0.0
+        # 匹配率以“客户结算单”为口径：已匹配（含人工匹配）结算单 / 参与对账的结算单总数。
+        unmatched_settlement_count = sum(1 for r in results if r.status == "unmatched" and r.settlement_id is not None)
+        reconciled_settlements = matched_count + manual_count
+        total_settlements_for_rate = reconciled_settlements + unmatched_settlement_count
+        match_rate = round(reconciled_settlements / total_settlements_for_rate * 100, 2) if total_settlements_for_rate > 0 else 0.0
 
         total_diff = sum(r.diff_amount or 0 for r in results if r.status == "matched")
 

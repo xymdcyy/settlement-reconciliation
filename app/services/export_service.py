@@ -46,8 +46,9 @@ class ExportService:
         unmatched_settlement = [r for r in results if r.status == "unmatched" and r.settlement_id]
         ignored = [r for r in results if r.status == "ignored"]
 
-        total_matchable = len(matched) + len(unmatched_receipt)
-        match_rate = round(len(matched) / total_matchable * 100, 2) if total_matchable > 0 else 0
+        # 匹配率以“客户结算单”为口径：已匹配结算单 / 参与对账的结算单总数
+        total_settlements_for_rate = len(matched) + len(unmatched_settlement)
+        match_rate = round(len(matched) / total_settlements_for_rate * 100, 2) if total_settlements_for_rate > 0 else 0
         total_diff = sum(r.diff_amount or 0 for r in matched)
 
         summary_data = [
@@ -220,8 +221,9 @@ class ExportService:
             matched = sum(1 for r in grp if r.status in ("matched", "manual"))
             unmatched_receipt = sum(1 for r in grp if r.status == "unmatched" and r.receipt_id is not None)
             unmatched_settlement = sum(1 for r in grp if r.status == "unmatched" and r.settlement_id is not None)
-            total_matchable = matched + unmatched_receipt
-            match_rate = round(matched / total_matchable * 100, 2) if total_matchable > 0 else 0
+            # 匹配率以“客户结算单”为口径：已匹配结算单 / 参与对账的结算单总数
+            total_settlements_for_rate = matched + unmatched_settlement
+            match_rate = round(matched / total_settlements_for_rate * 100, 2) if total_settlements_for_rate > 0 else 0
             total_diff = sum(r.diff_amount or 0 for r in grp)
 
             result.append({

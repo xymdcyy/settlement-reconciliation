@@ -196,7 +196,7 @@ class CorrectionService:
         db.add(log)
         db.commit()
 
-        return {"success": True, "message": "已忽略"}
+        return {"success": True, "message": "已忽略", "result_id": result_id}
 
     @staticmethod
     def add_note(
@@ -236,4 +236,4 @@ class CorrectionService:
         db.add(log)
         db.commit()
 
-        return {"success": True, "message": "备注已添加"}
+        return {"success": True, "message": "备注已添加", "result_id": result_id}

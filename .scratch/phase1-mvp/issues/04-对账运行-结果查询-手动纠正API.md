@@ -4,7 +4,7 @@
 
 **Blocked by:** #03（需要上传的数据）
 
-**Status:** ready-for-agent
+**Status:** done ✅ — 已实现；端到端验证中修复匹配率口径 + 纠正响应 result_id（2026-08-20）
 
 **交付内容：**
 

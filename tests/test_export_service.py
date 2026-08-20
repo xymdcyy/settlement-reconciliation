@@ -190,3 +190,63 @@ def test_get_history_empty_customer_ids(db_session):
     """无匹配结果时 get_history 不应报错"""
     items = ExportService.get_history(db_session)
     assert items == []
+
+
+def _seed_lopsided_results(db_session):
+    """构造：2 笔已匹配结算单 + 3 笔仅我方未匹配（结算单侧全部匹配）。
+
+    旧口径（分母=我方笔数）匹配率 2/5=40%；
+    正确口径（分母=结算单数）匹配率 2/2=100%。
+    """
+    from app.models import Customer, MatchResult, OurReceipt, CustomerSettlement
+
+    customer = Customer(name="口径测试", slug="rate", is_active=True)
+    db_session.add(customer)
+    db_session.flush()
+
+    for i in range(1, 6):
+        r = OurReceipt(receipt_no=f"R{i}", customer_id=customer.id, period="202608",
+                       model="M", quantity=1, amount=100)
+        db_session.add(r)
+    db_session.flush()
+
+    receipts = db_session.query(OurReceipt).all()
+    # 2 笔匹配（含结算单），3 笔仅我方未匹配
+    for i in range(2):
+        s = CustomerSettlement(customer_id=customer.id, period="202608",
+                               match_key=f"K{i}", model="M", quantity=1, amount=100)
+        db_session.add(s)
+        db_session.flush()
+        db_session.add(MatchResult(customer_id=customer.id, period="202608",
+                                   receipt_id=receipts[i].id, settlement_id=s.id,
+                                   match_type="exact", confidence=1.0, status="matched",
+                                   source="auto", diff_amount=0, diff_quantity=0))
+    for i in range(2, 5):
+        db_session.add(MatchResult(customer_id=customer.id, period="202608",
+                                   receipt_id=receipts[i].id, settlement_id=None,
+                                   match_type="未匹配", confidence=0.0, status="unmatched",
+                                   source="auto"))
+    db_session.commit()
+    return customer
+
+
+def test_export_match_rate_is_settlement_driven(db_session):
+    """导出汇总的匹配率以结算单为口径（2/2=100%，而非 2/5=40%）"""
+    customer = _seed_lopsided_results(db_session)
+    output = ExportService.export_reconciliation(customer.id, "202608", "口径测试", db_session)
+
+    wb = load_workbook(output)
+    rows = list(wb["对账汇总"].iter_rows(values_only=True))
+    rate_row = [r for r in rows if r[0] == "匹配率"]
+    assert len(rate_row) == 1
+    assert rate_row[0][1] == "100.0%", f"匹配率应为结算单口径 100.0%: {rate_row}"
+
+
+def test_get_history_match_rate_is_settlement_driven(db_session):
+    """历史查询的匹配率以结算单为口径（2/2=100%，而非 2/5=40%）"""
+    customer = _seed_lopsided_results(db_session)
+    items = ExportService.get_history(db_session, customer_id=customer.id)
+    assert len(items) == 1
+    assert items[0]["matched_count"] == 2
+    assert items[0]["unmatched_receipts"] == 3
+    assert items[0]["match_rate"] == 100.0, f"匹配率应为结算单口径 100.0: {items[0]}"

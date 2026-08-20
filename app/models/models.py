@@ -72,6 +72,11 @@ class Customer(Base, TimestampMixin):
     slug = Column(Text, nullable=False, unique=True, comment="客户标识（英文小写）")
     description = Column(Text, nullable=True, comment="客户描述")
     is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
+    match_keywords = Column(
+        JsonType,
+        nullable=True,
+        comment="结算客户名称归属关键词列表；我方明细的结算客户名称需包含全部关键词才归属该客户",
+    )
 
     def __repr__(self):
         return f"<Customer(id={self.id}, name='{self.name}', slug='{self.slug}')>"

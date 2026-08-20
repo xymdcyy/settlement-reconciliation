@@ -69,9 +69,9 @@ class UploadService:
         if total == 0:
             return {"total": 0, "assigned_to_customers": {}, "unassigned": 0, "message": "Excel 文件为空"}
 
-        # 获取所有客户名称映射
-        customers = db.query(Customer).all()
-        customer_map = cls._build_customer_name_map(customers)
+        # 获取所有客户（用于将“结算客户名称”解析到客户）
+        customers = [c for c in db.query(Customer).all() if c.is_active]
+        resolve_cache: dict[str, Optional[int]] = {}
 
         assigned = {}  # customer_id -> count
         unassigned = 0
@@ -79,7 +79,9 @@ class UploadService:
 
         for _, row in df.iterrows():
             customer_name = cls._safe_str(row.get("结算客户名称", ""))
-            customer_id = customer_map.get(customer_name)
+            if customer_name not in resolve_cache:
+                resolve_cache[customer_name] = cls._resolve_customer_id(customer_name, customers)
+            customer_id = resolve_cache[customer_name]
 
             if customer_id is None:
                 unassigned += 1
@@ -229,18 +231,32 @@ class UploadService:
         return df.reset_index(drop=True)
 
     @staticmethod
-    def _build_customer_name_map(customers: list[Customer]) -> dict[str, int]:
-        """构建客户名称到ID的映射
+    def _resolve_customer_id(customer_name: str, customers: list[Customer]) -> Optional[int]:
+        """将我方明细的“结算客户名称”解析到客户 ID。
 
-        支持:
-        - 精确匹配: Customer.name == 结算客户名称
-        - 部分匹配: 结算客户名称包含 Customer.name
+        匹配优先级：
+        1. 精确匹配：Customer.name == 结算客户名称
+        2. 关键词匹配：结算客户名称包含该客户 match_keywords 中的全部关键词
+           （例如客户关键词 ["天猫优品", "经销"] 可归属
+           "张家口天猫优品电子商务有限公司-经销"）
+
+        若关键词命中多个客户，视为歧义，返回 None（不分配），避免财务误配。
         """
-        name_map = {}
+        if not customer_name:
+            return None
+        # 1) 精确匹配
         for c in customers:
-            if c.is_active:
-                name_map[c.name] = c.id
-        return name_map
+            if c.name and c.name == customer_name:
+                return c.id
+        # 2) 关键词全包含匹配
+        hits = [
+            c.id
+            for c in customers
+            if c.match_keywords and all(kw in customer_name for kw in c.match_keywords)
+        ]
+        if len(hits) == 1:
+            return hits[0]
+        return None
 
     @staticmethod
     def _safe_str(value, default="") -> str:
