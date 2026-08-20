@@ -138,6 +138,42 @@ class TestMatchService:
         summary = MatchService.get_summary(customer.id, "202607", db_session)
         assert summary["match_rate"] == 100.0
 
+    def test_match_rate_one_to_many_consistent_across_apis(self, db_session, customer):
+        """一对多入库行时，run 与 get_summary 的匹配率口径一致（行级）。
+
+        场景：结算单1 拆成2条入库行(全匹配) + 结算单2 一条入库行(未匹配)
+        → 行级匹配率 = 已匹配行2 / 入库行3 = 66.67%。run 与 get_summary 必须一致。
+        """
+        db_session.add(OurReceipt(receipt_no="S1", customer_id=customer.id, period="202607",
+                                  model="M", quantity=1, amount=50.0))
+        db_session.add(OurReceipt(receipt_no="S2", customer_id=customer.id, period="202607",
+                                  model="M", quantity=1, amount=50.0))
+        db_session.add(CustomerSettlement(customer_id=customer.id, period="202607",
+                                          match_key="K1", model="M", quantity=1, amount=50.0))
+        db_session.add(CustomerSettlement(customer_id=customer.id, period="202607",
+                                          match_key="K2", model="M", quantity=1, amount=60.0))
+        db_session.commit()
+
+        s1 = db_session.query(CustomerSettlement).filter(CustomerSettlement.match_key == "K1").first()
+        s2 = db_session.query(CustomerSettlement).filter(CustomerSettlement.match_key == "K2").first()
+        r1, r2 = db_session.query(OurReceipt).order_by(OurReceipt.id).all()
+
+        db_session.add(MatchResult(customer_id=customer.id, period="202607", receipt_id=r1.id,
+                                   settlement_id=s1.id, match_type="精确", confidence=1.0,
+                                   status="matched", source="auto", diff_amount=0))
+        db_session.add(MatchResult(customer_id=customer.id, period="202607", receipt_id=r2.id,
+                                   settlement_id=s1.id, match_type="精确", confidence=1.0,
+                                   status="matched", source="auto", diff_amount=0))
+        db_session.add(MatchResult(customer_id=customer.id, period="202607", receipt_id=None,
+                                   settlement_id=s2.id, match_type="未匹配", confidence=0.0,
+                                   status="unmatched", source="auto"))
+        db_session.commit()
+
+        summary = MatchService.get_summary(customer.id, "202607", db_session)
+        # 行级：已匹配 2 行 / 入库 3 行 = 66.67%
+        assert summary["match_rate"] == 66.67
+        assert summary["matched_count"] == 2
+
     def test_get_results(self, db_session, test_data):
         """查询匹配结果"""
         MatchService.run(test_data["customer"].id, "202601", db_session)
