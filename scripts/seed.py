@@ -28,6 +28,7 @@ def seed():
 
         # 创建引擎配置
         engine_config = EngineConfig(
+            customer_id=tmall.id,
             engine_name="tmall",
             engine_version="v1.0.0",
             config_params={
