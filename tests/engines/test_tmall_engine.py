@@ -249,3 +249,53 @@ class TestTmallEngineMatch:
         assert settlements[0].quantity == 100
         assert settlements[1].match_key == "PON002"
         assert settlements[1].model == "65N9M"
+
+
+class TestReceiptOrderNoPriority:
+    """签收单订单号优先级：审批单号 > NC订单号 > 平台订单号（与原脚本 get_order_number 一致）"""
+
+    @pytest.fixture
+    def engine(self):
+        return TmallEngine()
+
+    def _receipt(self, id, amount, model, nc="", approval="", platform=""):
+        raw = {}
+        if approval:
+            raw["审批单号"] = approval
+        if nc:
+            raw["NC订单号"] = nc
+        if platform:
+            raw["平台订单号"] = platform
+        return OurReceipt(id=id, receipt_no=f"S{id}", model=model, quantity=1,
+                          amount=amount, unit_price=0, receipt_date="", doc_type="",
+                          customer_name="", nc_order_no=nc, raw_data=raw)
+
+    def _settlement(self, id, order_id, amount, model):
+        return CustomerSettlement(id=id, match_key=order_id, model=model, quantity=1,
+                                  amount=amount, unit_price=0, settlement_date="",
+                                  raw_data={"业务主单据编码": order_id})
+
+    def test_approval_no_takes_priority_over_nc(self, engine):
+        """审批单号存在时以其为订单号：结算单编码=审批单号即匹配，即便 NC订单号 不同"""
+        receipts = [self._receipt(1, 100.0, "75N9M", nc="NC-DIFF", approval="APV001")]
+        # 结算单编码 = 审批单号 → 应匹配
+        assert len(engine.match(receipts, [self._settlement(1, "APV001", 100.0, "75N9M")]).matched_pairs) == 1
+        # 结算单编码 = NC订单号 → 不应匹配（证明用的是审批单号而非 NC）
+        assert len(engine.match(receipts, [self._settlement(2, "NC-DIFF", 100.0, "75N9M")]).matched_pairs) == 0
+
+    def test_fallback_to_nc_when_no_approval(self, engine):
+        """无审批单号时回退到 NC订单号"""
+        receipts = [self._receipt(1, 100.0, "75N9M", nc="NC001")]
+        assert len(engine.match(receipts, [self._settlement(1, "NC001", 100.0, "75N9M")]).matched_pairs) == 1
+
+    def test_fallback_to_platform_when_no_approval_nc(self, engine):
+        """审批单号、NC订单号都空时回退到平台订单号"""
+        receipts = [self._receipt(1, 100.0, "75N9M", platform="PLT001")]
+        assert len(engine.match(receipts, [self._settlement(1, "PLT001", 100.0, "75N9M")]).matched_pairs) == 1
+
+    def test_nan_approval_falls_back_to_nc(self, engine):
+        """raw_data 中审批单号为 NaN 时应回退到 NC订单号，而非用字符串 'nan'"""
+        r = OurReceipt(id=1, receipt_no="S1", model="75N9M", quantity=1, amount=100.0,
+                       unit_price=0, receipt_date="", doc_type="", customer_name="",
+                       nc_order_no="NC001", raw_data={"审批单号": float("nan")})
+        assert len(engine.match([r], [self._settlement(1, "NC001", 100.0, "75N9M")]).matched_pairs) == 1

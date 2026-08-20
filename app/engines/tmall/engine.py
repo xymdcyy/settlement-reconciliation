@@ -178,14 +178,29 @@ class TmallEngine(MatchEngine):
 
     def _make_receipt_key(self, r: OurReceipt) -> str:
         """创建签收单匹配键: 订单号|金额|型号"""
-        order_no = r.nc_order_no or ""
+        order_no = self._receipt_order_no(r)
         amount = f"{r.amount:.2f}" if r.amount else ""
         return f"{order_no}|{amount}|{r.model}"
 
     def _make_loose_key(self, r: OurReceipt) -> str:
         """创建宽松匹配键: 订单号|型号"""
-        order_no = r.nc_order_no or ""
+        order_no = self._receipt_order_no(r)
         return f"{order_no}|{r.model}"
+
+    def _receipt_order_no(self, r: OurReceipt) -> str:
+        """签收单优先级订单号：审批单号 > NC订单号 > 平台订单号（与原脚本 get_order_number 一致）。
+
+        审批单号/平台订单号未提升为独立字段，从 raw_data 中读取；
+        NC订单号优先取标准化字段 r.nc_order_no，回退到 raw_data。
+        """
+        raw = r.raw_data or {}
+        approval = self._safe_str(raw.get(RECEIPT_COLS["approval_no"], ""))
+        if approval:
+            return approval
+        nc = self._safe_str(r.nc_order_no) or self._safe_str(raw.get(RECEIPT_COLS["nc_order_no"], ""))
+        if nc:
+            return nc
+        return self._safe_str(raw.get(RECEIPT_COLS["platform_no"], ""))
 
     def _make_loose_settlement_key(self, s: CustomerSettlement) -> str:
         """创建结算单宽松匹配键: 订单号|型号"""
@@ -218,7 +233,9 @@ class TmallEngine(MatchEngine):
 
     @staticmethod
     def _safe_str(value, default="") -> str:
-        """安全地转换为字符串"""
+        """安全地转换为字符串（None 与 pandas NaN 均视为空，向原脚本 pd.notna 行为看齐）"""
         if value is None:
+            return default
+        if isinstance(value, float) and value != value:  # NaN
             return default
         return str(value).strip()
