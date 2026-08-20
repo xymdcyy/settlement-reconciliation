@@ -43,10 +43,33 @@ def seed():
         )
         db.add(engine_config)
 
+        # 创建客户：重庆百货智屏（重百），使用 ChongbaiEngine 5 层匹配引擎
+        chongbai = Customer(
+            name="重庆百货智屏",
+            slug="chongbai",
+            description="重庆百货智屏对账客户，使用 ChongbaiEngine（凭证+型号+数量5层匹配）",
+            is_active=True,
+            # 签收明细“结算客户名称/收货客户名称”含“重百”或“重庆百货”即归属本客户
+            match_keywords=["重百"],
+        )
+        db.add(chongbai)
+        db.flush()
+
+        chongbai_engine = EngineConfig(
+            customer_id=chongbai.id,
+            engine_name="chongbai",
+            engine_version="v5.0.0",
+            config_params={"lookback_months": 3},
+            is_active=True,
+        )
+        db.add(chongbai_engine)
+
         db.commit()
         print(f"种子数据已创建:")
         print(f"  - 客户: {tmall.name} (id={tmall.id})")
         print(f"  - 引擎配置: {engine_config.engine_name} v{engine_config.engine_version}")
+        print(f"  - 客户: {chongbai.name} (id={chongbai.id})")
+        print(f"  - 引擎配置: {chongbai_engine.engine_name} v{chongbai_engine.engine_version}")
 
     except Exception as e:
         db.rollback()

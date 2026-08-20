@@ -8,7 +8,7 @@ from app.engines.base import MatchEngine
 # 引擎注册表：customer_id → (模块路径, 类名)
 _ENGINE_REGISTRY: dict[int, tuple[str, str]] = {
     1: ("app.engines.tmall.engine", "TmallEngine"),  # 天猫优品经销
-    # 2: ("app.engines.chongbai.engine", "ChongbaiEngine"),
+    2: ("app.engines.chongbai.engine", "ChongbaiEngine"),  # 重庆百货智屏
 }
 
 
