@@ -30,3 +30,6 @@ uploads/
 cols.txt
 scripts/push_commit.py
 scripts/debug_push.py
+
+# UI 测试截图/报告（本地产物，不提交）
+.scratch/ui_test/
