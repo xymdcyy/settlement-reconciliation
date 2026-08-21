@@ -1,19 +1,27 @@
+# 数据库模型导出
+
 from app.models.models import (
+    Adjustment,
+    Base,
     CorrectionLog,
     Customer,
-    CustomerSettlement,
-    EngineConfig,
+    CustomerStatement,
+    Invoice,
     MatchResult,
-    OurReceipt,
-    UploadHistory,
+    Receipt,
+    User,
+    UserCustomerAssignment,
 )
 
 __all__ = [
-    "Customer",
-    "OurReceipt",
-    "CustomerSettlement",
-    "MatchResult",
+    "Adjustment",
+    "Base",
     "CorrectionLog",
-    "EngineConfig",
-    "UploadHistory",
+    "Customer",
+    "CustomerStatement",
+    "Invoice",
+    "MatchResult",
+    "Receipt",
+    "User",
+    "UserCustomerAssignment",
 ]
