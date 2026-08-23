@@ -7,7 +7,7 @@ from io import BytesIO
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models import CustomerSettlement, MatchResult, OurReceipt
+from app.models import CustomerStatement, MatchResult, Receipt
 
 
 class ExportService:
@@ -34,8 +34,8 @@ class ExportService:
         receipt_ids = [r.receipt_id for r in results if r.receipt_id]
         settlement_ids = [r.settlement_id for r in results if r.settlement_id]
 
-        receipts = {r.id: r for r in db.query(OurReceipt).filter(OurReceipt.id.in_(receipt_ids)).all()} if receipt_ids else {}
-        settlements = {s.id: s for s in db.query(CustomerSettlement).filter(CustomerSettlement.id.in_(settlement_ids)).all()} if settlement_ids else {}
+        receipts = {r.id: r for r in db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).all()} if receipt_ids else {}
+        settlements = {s.id: s for s in db.query(CustomerStatement).filter(CustomerStatement.id.in_(settlement_ids)).all()} if settlement_ids else {}
 
         # ============================================================
         # Sheet1: 对账汇总

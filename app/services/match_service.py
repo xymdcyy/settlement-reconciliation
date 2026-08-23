@@ -9,9 +9,9 @@ from app.engines import get_engine
 from app.engines.base import OurReceipt as EngineReceipt
 from app.engines.base import CustomerSettlement as EngineSettlement
 from app.models import (
-    CustomerSettlement,
+    CustomerStatement,
     MatchResult,
-    OurReceipt,
+    Receipt,
 )
 
 
@@ -33,16 +33,16 @@ class MatchService:
             raise ValueError(f"客户 {customer_id} 未找到匹配引擎")
 
         # 加载我方数据
-        our_receipts = db.query(OurReceipt).filter(
-            OurReceipt.customer_id == customer_id,
-            OurReceipt.period == period,
+        our_receipts = db.query(Receipt).filter(
+            Receipt.customer_id == customer_id,
+            Receipt.period == period,
         ).all()
 
         # 加载客户方数据（未忽略的）
-        settlements = db.query(CustomerSettlement).filter(
-            CustomerSettlement.customer_id == customer_id,
-            CustomerSettlement.period == period,
-            CustomerSettlement.status != "ignored",
+        settlements = db.query(CustomerStatement).filter(
+            CustomerStatement.customer_id == customer_id,
+            CustomerStatement.period == period,
+            CustomerStatement.status != "ignored",
         ).all()
 
         if not our_receipts:
@@ -248,8 +248,8 @@ class MatchService:
         receipt_ids = [r.receipt_id for r in results if r.receipt_id is not None]
         settlement_ids = [r.settlement_id for r in results if r.settlement_id is not None]
 
-        receipts = {r.id: r for r in db.query(OurReceipt).filter(OurReceipt.id.in_(receipt_ids)).all()} if receipt_ids else {}
-        settlements = {s.id: s for s in db.query(CustomerSettlement).filter(CustomerSettlement.id.in_(settlement_ids)).all()} if settlement_ids else {}
+        receipts = {r.id: r for r in db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).all()} if receipt_ids else {}
+        settlements = {s.id: s for s in db.query(CustomerStatement).filter(CustomerStatement.id.in_(settlement_ids)).all()} if settlement_ids else {}
 
         items = []
         for r in results:
@@ -310,7 +310,7 @@ class MatchService:
     # ============================================================
 
     @staticmethod
-    def _to_engine_receipt(r: OurReceipt) -> EngineReceipt:
+    def _to_engine_receipt(r: Receipt) -> EngineReceipt:
         """数据库模型 → 引擎数据类"""
         return EngineReceipt(
             id=r.id,
@@ -327,7 +327,7 @@ class MatchService:
         )
 
     @staticmethod
-    def _to_engine_settlement(s: CustomerSettlement) -> EngineSettlement:
+    def _to_engine_settlement(s: CustomerStatement) -> EngineSettlement:
         """数据库模型 → 引擎数据类"""
         return EngineSettlement(
             id=s.id,

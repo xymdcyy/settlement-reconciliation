@@ -144,10 +144,10 @@ class RedFlushService:
         if not receipt:
             raise ValueError(f"退货记录不存在: {return_receipt_id}")
 
-        # 更新扩展字段
-        if not receipt.extra_fields:
-            receipt.extra_fields = {}
-        receipt.extra_fields["红通号"] = red_notice_no
+        # 更新扩展字段（重新赋值整个字典，触发 SQLAlchemy change tracking）
+        extra_fields = dict(receipt.extra_fields) if receipt.extra_fields else {}
+        extra_fields["红通号"] = red_notice_no
+        receipt.extra_fields = extra_fields
         receipt.updated_at = datetime.now()
 
         db.commit()

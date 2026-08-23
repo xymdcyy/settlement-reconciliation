@@ -180,6 +180,21 @@ class MarkDiffRequest(BaseModel):
     diff_note: Optional[str] = None
 
 
+class HistoryItem(BaseModel):
+    """历史对账项"""
+    customer_id: int
+    customer_name: str
+    period: str
+    total_receipts: int
+    matched: int
+    match_rate: float
+
+
+class HistoryResponse(BaseModel):
+    """历史对账响应"""
+    items: list[HistoryItem]
+
+
 # ========== 开票相关 ==========
 
 class BillingPendingItem(BaseModel):
@@ -240,6 +255,39 @@ class ResolvePendingRequest(BaseModel):
     """解决未决差异"""
     receipt_id: int
     resolved_period: str
+
+
+# ========== 人工纠正相关（保留 v1.0）==========
+
+class ManualMatchRequest(BaseModel):
+    """人工匹配请求"""
+    receipt_id: int
+    settlement_id: int
+    remark: Optional[str] = None
+
+
+class UnmatchRequest(BaseModel):
+    """解除匹配请求"""
+    result_id: int
+    reason: Optional[str] = None
+
+
+class IgnoreRequest(BaseModel):
+    """忽略请求"""
+    settlement_id: int
+    reason: Optional[str] = None
+
+
+class NoteRequest(BaseModel):
+    """备注请求"""
+    result_id: int
+    note: str
+
+
+class CorrectionResponse(BaseModel):
+    """人工纠正响应"""
+    status: str
+    message: str
 
 
 # ========== 迁移相关 ==========

@@ -1,17 +1,15 @@
-# 客户 API 路由（Phase 2：客户管理 CRUD + 引擎绑定）
+# 客户 API 路由
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.engines import get_engine_by_name, list_available_engines
-from app.models.models import Customer, EngineConfig
+from app.models import Customer
 from app.schemas import (
     CustomerCreate,
-    CustomerDetailResponse,
     CustomerResponse,
     CustomerUpdate,
-    EngineConfigPayload,
 )
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -38,25 +36,32 @@ def list_engines():
     return list_available_engines()
 
 
-@router.get("", response_model=list[CustomerDetailResponse])
+@router.get("", response_model=list[CustomerResponse])
 def list_customers(include_inactive: bool = True, db: Session = Depends(get_db)):
-    """客户列表（含引擎绑定配置）。默认返回全部（含停用）。"""
+    """客户列表。默认返回全部（含停用）。"""
     q = db.query(Customer)
     if not include_inactive:
         q = q.filter(Customer.is_active == True)
     return q.order_by(Customer.id).all()
 
 
-@router.post("", response_model=CustomerDetailResponse, status_code=201)
+@router.get("/{customer_id}", response_model=CustomerResponse)
+def get_customer(customer_id: int, db: Session = Depends(get_db)):
+    """获取单个客户详情。"""
+    return _get_or_404(db, customer_id)
+
+
+@router.post("", response_model=CustomerResponse, status_code=201)
 def create_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
-    """新建客户（可同时携带引擎绑定）。"""
+    """新建客户。"""
     _check_slug_free(db, payload.slug)
     c = Customer(
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
-        is_active=payload.is_active,
-        match_keywords=payload.match_keywords,
+        has_statement=payload.has_statement,
+        engine_name=payload.engine_name,
+        extra_fields_config=payload.extra_fields_config,
     )
     db.add(c)
     db.commit()
@@ -64,7 +69,7 @@ def create_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
     return c
 
 
-@router.put("/{customer_id}", response_model=CustomerDetailResponse)
+@router.put("/{customer_id}", response_model=CustomerResponse)
 def update_customer(customer_id: int, payload: CustomerUpdate, db: Session = Depends(get_db)):
     """更新客户基本信息。"""
     c = _get_or_404(db, customer_id)
@@ -85,32 +90,3 @@ def delete_customer(customer_id: int, db: Session = Depends(get_db)):
     c.is_active = False
     db.commit()
     return {"success": True, "message": f"客户 '{c.name}' 已停用", "id": customer_id}
-
-
-@router.put("/{customer_id}/engine", response_model=CustomerDetailResponse)
-def bind_engine(customer_id: int, payload: EngineConfigPayload, db: Session = Depends(get_db)):
-    """绑定/更新客户的匹配引擎配置。"""
-    c = _get_or_404(db, customer_id)
-    # 校验引擎名可用，并登记到运行时注册表
-    if get_engine_by_name(payload.engine_name) is None:
-        raise HTTPException(status_code=400, detail=f"未知引擎 '{payload.engine_name}'，可选: {list_available_engines()}")
-    from app.engines import AVAILABLE_ENGINES, register_engine
-    register_engine(customer_id, *AVAILABLE_ENGINES[payload.engine_name])
-    ec = db.query(EngineConfig).filter(EngineConfig.customer_id == customer_id).first()
-    if ec:
-        ec.engine_name = payload.engine_name
-        ec.engine_version = payload.engine_version
-        ec.config_params = payload.config_params
-        ec.is_active = payload.is_active
-    else:
-        ec = EngineConfig(
-            customer_id=customer_id,
-            engine_name=payload.engine_name,
-            engine_version=payload.engine_version,
-            config_params=payload.config_params,
-            is_active=payload.is_active,
-        )
-        db.add(ec)
-    db.commit()
-    db.refresh(c)
-    return c
