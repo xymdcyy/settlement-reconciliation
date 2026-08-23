@@ -165,7 +165,7 @@ def main():
     for c in commits:
         tree_sha = ensure_tree_on_remote(repo, c, parent_sha, parent_tree)
         reproduce_commit(repo, c, parent_sha, tree_sha)
-        print(f"  ✓ {c[:8]}  {git_text(['log', '-1', '--format=%s', c])[:48]}")
+        print(f"  [OK] {c[:8]}  {git_text(['log', '-1', '--format=%s', c])[:48]}")
         parent_sha, parent_tree = c, tree_sha
 
     # 更新远端 ref
@@ -176,7 +176,7 @@ def main():
 
     # 同步本地跟踪 ref，使 git status 立即“up to date”、不再分叉
     subprocess.run(["git", "update-ref", f"refs/remotes/origin/{branch}", local_head])
-    print(f"\n✅ 推送成功！本地/远端 HEAD 均为 {local_head[:8]}"
+    print(f"\n[OK] 推送成功！本地/远端 HEAD 均为 {local_head[:8]}"
           f"（{'快进' if fast_forward else 'force 覆盖自身历史'}，SHA 完全一致、无分叉）")
 
 
