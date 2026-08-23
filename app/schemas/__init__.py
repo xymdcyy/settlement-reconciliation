@@ -1,83 +1,78 @@
-# Pydantic 数据模型
+# Pydantic 数据模型 v2.0
 
-from datetime import datetime
-from decimal import Decimal
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
 
-# ============================================================
-# 客户 (Customer)
-# ============================================================
+# ========== 用户相关 ==========
 
-class CustomerCreate(BaseModel):
-    name: str = Field(..., description="客户名称")
-    slug: str = Field(..., description="客户标识（英文小写）")
+class UserBase(BaseModel):
+    username: str
+    real_name: Optional[str] = None
+    role: str = "staff"
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserResponse(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== 客户相关 ==========
+
+class ExtraFieldConfig(BaseModel):
+    """扩展列配置"""
+    name: str
+    type: str  # string/number/date
+    required: bool = False
+    comment: Optional[str] = None
+
+
+class CustomerBase(BaseModel):
+    name: str
+    slug: str
     description: Optional[str] = None
-    is_active: bool = True
-    match_keywords: Optional[list[str]] = Field(default=None, description="结算客户名称归属关键词（含全部关键词即归属）")
+    has_statement: bool = False
+    engine_name: Optional[str] = None
+
+
+class CustomerCreate(CustomerBase):
+    extra_fields_config: Optional[list[ExtraFieldConfig]] = None
 
 
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
-    slug: Optional[str] = None
     description: Optional[str] = None
-    is_active: Optional[bool] = None
-    match_keywords: Optional[list[str]] = None
-
-
-class EngineConfigPayload(BaseModel):
-    engine_name: str = Field(..., description="引擎类名（如 tmall/chongbai）")
-    engine_version: Optional[str] = None
-    config_params: Optional[dict[str, Any]] = None
-    is_active: bool = True
-
-
-class EngineConfigResponse(BaseModel):
-    id: int
-    customer_id: int
+    has_statement: Optional[bool] = None
     engine_name: Optional[str] = None
-    engine_version: Optional[str] = None
-    config_params: Optional[dict[str, Any]] = None
-    is_active: bool
-
-    model_config = {"from_attributes": True}
+    extra_fields_config: Optional[list[ExtraFieldConfig]] = None
+    is_active: Optional[bool] = None
 
 
-class CustomerDetailResponse(BaseModel):
+class CustomerResponse(CustomerBase):
     id: int
-    name: str
-    slug: str
-    description: Optional[str] = None
+    extra_fields_config: Optional[list[dict]] = None
     is_active: bool
-    match_keywords: Optional[list[str]] = None
-    created_at: Optional[datetime] = None
-    engine_config: Optional[EngineConfigResponse] = None
+    created_at: datetime
 
-    model_config = {"from_attributes": True}
-
-
-class CustomerResponse(BaseModel):
-    id: int
-    name: str
-    slug: str
-    description: Optional[str] = None
-    is_active: bool
-    created_at: Optional[datetime] = None
-
-    model_config = {"from_attributes": True}
+    class Config:
+        from_attributes = True
 
 
-# ============================================================
-# 我方签收记录 (OurReceipt)
-# ============================================================
+# ========== 台账相关 ==========
 
-class OurReceiptResponse(BaseModel):
-    id: int
+class ReceiptBase(BaseModel):
+    """台账基础字段"""
     receipt_no: str
-    customer_id: int
-    period: str
     model: Optional[str] = None
     quantity: Optional[float] = None
     amount: Optional[float] = None
@@ -87,167 +82,252 @@ class OurReceiptResponse(BaseModel):
     customer_name: Optional[str] = None
     nc_order_no: Optional[str] = None
     product_line: Optional[str] = None
-    batch_id: Optional[str] = None
-    raw_data: Optional[Any] = None
-    created_at: Optional[datetime] = None
-
-    model_config = {"from_attributes": True}
 
 
-class OurReceiptUploadResponse(BaseModel):
-    total: int = 0
-    assigned_to_customers: dict[str, int] = {}
-    unassigned: int = 0
-    message: str = ""
-
-
-# ============================================================
-# 客户方结算单 (CustomerSettlement)
-# ============================================================
-
-class CustomerSettlementResponse(BaseModel):
-    id: int
+class ReceiptCreate(ReceiptBase):
+    """创建台账（导入时）"""
     customer_id: int
     period: str
     batch_id: Optional[str] = None
-    match_key: Optional[str] = None
-    model: Optional[str] = None
-    quantity: Optional[float] = None
-    amount: Optional[float] = None
-    unit_price: Optional[float] = None
-    settlement_date: Optional[str] = None
-    doc_type: Optional[str] = None
-    status: str
-    raw_data: Optional[Any] = None
-    created_at: Optional[datetime] = None
-
-    model_config = {"from_attributes": True}
+    raw_data: Optional[dict] = None
 
 
-class SettlementUploadResponse(BaseModel):
-    total: int = 0
-    parsed: int = 0
-    with_match_key: int = 0
-    message: str = ""
-
-
-# ============================================================
-# 匹配结果 (MatchResult)
-# ============================================================
-
-class MatchResultResponse(BaseModel):
-    id: int
-    customer_id: int
-    period: str
-    batch_id: Optional[str] = None
-    receipt_id: Optional[int] = None
-    settlement_id: Optional[int] = None
-    match_type: Optional[str] = None
-    confidence: Optional[float] = None
-    status: str
-    source: str
-    diff_amount: Optional[float] = None
-    diff_quantity: Optional[float] = None
+class ReceiptUpdate(BaseModel):
+    """更新台账（编辑开票状态）"""
+    billing_status: Optional[str] = None
+    invoice_no: Optional[str] = None
+    invoice_date: Optional[str] = None
     remark: Optional[str] = None
-    operator_id: Optional[int] = None
-    receipt: Optional[OurReceiptResponse] = None
-    settlement: Optional[CustomerSettlementResponse] = None
-    created_at: Optional[datetime] = None
+    extra_fields: Optional[dict] = None
+    diff_type: Optional[str] = None
+    diff_note: Optional[str] = None
 
-    model_config = {"from_attributes": True}
+
+class ReceiptSplit(BaseModel):
+    """拆分行"""
+    quantities: list[float] = Field(..., description="拆分后的数量列表，如 [3, 2]")
+    split_note: Optional[str] = None
+
+
+class ReceiptResponse(ReceiptBase):
+    """台账响应"""
+    id: int
+    customer_id: int
+    period: str
+    batch_id: Optional[str]
+
+    # 开票状态
+    billing_status: str
+    invoice_no: Optional[str]
+    invoice_date: Optional[str]
+    remark: Optional[str]
+
+    # 拆分
+    split_parent_id: Optional[int]
+    split_note: Optional[str]
+
+    # 扩展字段
+    extra_fields: Optional[dict]
+
+    # 差异
+    diff_type: Optional[str]
+    diff_note: Optional[str]
+    resolved_period: Optional[str]
+
+    # 审计
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class ReceiptListResponse(BaseModel):
+    """台账列表响应"""
+    items: list[ReceiptResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+# ========== 对账相关 ==========
+
+class RunReconciliationRequest(BaseModel):
+    customer_id: int
+    period: str
 
 
 class MatchSummaryResponse(BaseModel):
+    """匹配摘要"""
     total_receipts: int = 0
-    total_settlements: int = 0
-    matched_count: int = 0
+    total_statements: int = 0
+    matched: int = 0
     unmatched_receipts: int = 0
-    unmatched_settlements: int = 0
-    manual_count: int = 0
-    ignored_count: int = 0
+    unmatched_statements: int = 0
     match_rate: float = 0.0
-    total_amount_diff: float = 0.0
 
 
 class ReconciliationRunResponse(BaseModel):
-    status: str = "completed"
+    status: str
     summary: MatchSummaryResponse
-    message: str = ""
+    message: str
 
 
-# ============================================================
-# 手动纠正 (Correction)
-# ============================================================
+class MarkDiffRequest(BaseModel):
+    """标记差异"""
+    receipt_id: int
+    diff_type: str  # time_diff/price_diff/qty_diff/...
+    diff_note: Optional[str] = None
 
-class RunReconciliationRequest(BaseModel):
-    customer_id: int = Field(..., description="客户 ID")
-    period: str = Field(..., description="对账期间 YYYYMM")
 
+class HistoryItem(BaseModel):
+    """历史对账项"""
+    customer_id: int
+    customer_name: str
+    period: str
+    total_receipts: int
+    matched: int
+    match_rate: float
+
+
+class HistoryResponse(BaseModel):
+    """历史对账响应"""
+    items: list[HistoryItem]
+
+
+# ========== 开票相关 ==========
+
+class BillingPendingItem(BaseModel):
+    """可开票项"""
+    receipt_id: int
+    receipt_no: str
+    model: str
+    quantity: float
+    amount: float
+    customer_name: str
+
+
+class GenerateBillingRequest(BaseModel):
+    """生成开票清单"""
+    receipt_ids: list[int]
+
+
+class ImportBilledRequest(BaseModel):
+    """导入已开票清单"""
+    items: list[dict]  # [{receipt_no, invoice_no, invoice_date, amount, quantity}]
+
+
+# ========== 红冲相关 ==========
+
+class ReturnItem(BaseModel):
+    """退货记录"""
+    receipt_id: int
+    receipt_no: str
+    model: str
+    quantity: float
+    amount: float
+    unit_price: float
+
+
+class BlueInvoiceMatch(BaseModel):
+    """蓝票匹配结果"""
+    return_receipt_id: int
+    blue_invoice_no: Optional[str]
+    blue_invoice_date: Optional[str]
+    blue_receipt_id: Optional[int]
+
+
+# ========== 未决池相关 ==========
+
+class PendingPoolItem(BaseModel):
+    """未决差异项"""
+    receipt_id: int
+    receipt_no: str
+    model: str
+    quantity: float
+    amount: float
+    diff_type: str
+    diff_note: Optional[str]
+    pending_months: int  # 挂账月数
+
+
+class ResolvePendingRequest(BaseModel):
+    """解决未决差异"""
+    receipt_id: int
+    resolved_period: str
+
+
+# ========== 人工纠正相关（保留 v1.0）==========
 
 class ManualMatchRequest(BaseModel):
-    customer_id: int
-    period: str
+    """人工匹配请求"""
     receipt_id: int
     settlement_id: int
-    operator_id: Optional[int] = None
-    reason: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class UnmatchRequest(BaseModel):
-    customer_id: int
-    period: str
+    """解除匹配请求"""
     result_id: int
-    operator_id: Optional[int] = None
     reason: Optional[str] = None
 
 
 class IgnoreRequest(BaseModel):
-    customer_id: int
-    period: str
-    result_id: int
-    reason: str = Field(..., description="忽略原因")
-    operator_id: Optional[int] = None
+    """忽略请求"""
+    settlement_id: int
+    reason: Optional[str] = None
 
 
 class NoteRequest(BaseModel):
-    customer_id: int
-    period: str
+    """备注请求"""
     result_id: int
-    remark: str
-    operator_id: Optional[int] = None
+    note: str
 
 
 class CorrectionResponse(BaseModel):
-    success: bool = True
-    message: str = ""
-    result_id: Optional[int] = None
+    """人工纠正响应"""
+    status: str
+    message: str
 
 
-# ============================================================
-# 历史查询
-# ============================================================
+# ========== 迁移相关 ==========
 
-class HistoryItem(BaseModel):
-    period: str
+class MigrationUploadResponse(BaseModel):
+    """迁移上传响应"""
+    file_path: str
+    total_rows: int
+    message: str
+
+
+class MigrationValidateResponse(BaseModel):
+    """迁移验证响应"""
+    is_valid: bool
+    total_rows: int
+    imported_rows: int
+    excel_total_amount: float
+    imported_total_amount: float
+    warnings: list[str]
+    errors: list[str]
+
+
+class MigrationImportRequest(BaseModel):
+    """迁移导入请求"""
     customer_id: int
-    customer_name: str
-    matched_count: int
-    unmatched_receipts: int
-    unmatched_settlements: int
-    match_rate: float
-    total_amount_diff: float
-    run_at: Optional[datetime] = None
+    file_path: str
+    period: str
+    rules_file: Optional[str] = None  # 清洗规则文件路径
 
 
-class HistoryResponse(BaseModel):
-    items: list[HistoryItem] = []
+# ========== 通用响应 ==========
+
+class SuccessResponse(BaseModel):
+    """成功响应"""
+    status: str = "success"
+    message: str
 
 
-# ============================================================
-# 通用
-# ============================================================
-
-class UploadResponse(BaseModel):
-    success: bool = True
-    message: str = ""
-    data: Optional[Any] = None
+class ErrorResponse(BaseModel):
+    """错误响应"""
+    status: str = "error"
+    message: str
+    detail: Optional[str] = None

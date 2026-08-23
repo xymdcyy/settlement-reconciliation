@@ -43,9 +43,22 @@ def health():
 
 
 # 路由挂载
-from app.routers import upload, reconciliation, corrections, customers  # noqa: E402
+from app.routers import (  # noqa: E402
+    billing,
+    corrections,
+    customers,
+    migration,
+    pending_pool,
+    receipts,
+    reconciliation,
+    red_flush,
+)
 
-app.include_router(upload.router)
+app.include_router(receipts.router)
 app.include_router(reconciliation.router)
 app.include_router(corrections.router)
+app.include_router(billing.router)
+app.include_router(red_flush.router)
+app.include_router(pending_pool.router)
 app.include_router(customers.router)
+app.include_router(migration.router)

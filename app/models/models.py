@@ -1,4 +1,4 @@
-# 数据库模型定义
+# 数据库模型定义 v2.0
 
 import json
 from datetime import datetime
@@ -62,8 +62,24 @@ class TimestampMixin:
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=True)
 
 
+class User(Base, TimestampMixin):
+    """用户表"""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(Text, nullable=False, unique=True, comment="用户名")
+    password_hash = Column(Text, nullable=False, comment="密码哈希")
+    real_name = Column(Text, nullable=True, comment="真实姓名")
+    role = Column(Text, nullable=False, default="staff", comment="角色：admin(管理员)/manager(主管)/staff(财务专员)")
+    is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
+
+
 class Customer(Base, TimestampMixin):
-    """客户注册表"""
+    """客户表"""
 
     __tablename__ = "customers"
 
@@ -71,33 +87,54 @@ class Customer(Base, TimestampMixin):
     name = Column(Text, nullable=False, comment="客户名称")
     slug = Column(Text, nullable=False, unique=True, comment="客户标识（英文小写）")
     description = Column(Text, nullable=True, comment="客户描述")
-    is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
-    match_keywords = Column(
+
+    # 对账相关
+    has_statement = Column(Boolean, default=False, nullable=False, comment="是否有对账单")
+    engine_name = Column(Text, nullable=True, comment="对账引擎名称（如有）")
+
+    # 扩展列配置（JSONB）
+    extra_fields_config = Column(
         JsonType,
         nullable=True,
-        comment="结算客户名称归属关键词列表；我方明细的结算客户名称需包含全部关键词才归属该客户",
+        comment="扩展列配置 [{name, type, required, comment}]",
     )
 
-    # 一对一引擎配置（EngineConfig.customer_id 唯一），与 EngineConfig.customer 成对。
-    engine_config = relationship(
-        "EngineConfig",
-        back_populates="customer",
-        uselist=False,
-    )
+    is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
 
     def __repr__(self):
         return f"<Customer(id={self.id}, name='{self.name}', slug='{self.slug}')>"
 
 
-class OurReceipt(Base, TimestampMixin):
-    """我方签收记录（新方舟系统导出）"""
+class UserCustomerAssignment(Base, TimestampMixin):
+    """用户-客户归属表"""
 
-    __tablename__ = "our_receipts"
+    __tablename__ = "user_customer_assignments"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    receipt_no = Column(Text, nullable=False, index=True, comment="新方舟销售单号")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="用户ID")
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, comment="客户ID")
+    role = Column(Text, default="owner", nullable=False, comment="角色：owner(负责)/viewer(查看)")
+
+    # 关系
+    user = relationship("User", backref="customer_assignments")
+    customer = relationship("Customer", backref="user_assignments")
+
+    def __repr__(self):
+        return f"<UserCustomerAssignment(user_id={self.user_id}, customer_id={self.customer_id})>"
+
+
+class Receipt(Base, TimestampMixin):
+    """台账行（核心表）⭐"""
+
+    __tablename__ = "receipts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True, comment="关联客户")
     period = Column(Text, nullable=False, index=True, comment="对账期间 YYYYMM")
+    batch_id = Column(Text, nullable=True, comment="导入批次")
+
+    # ========== 系统字段（从新方舟94列提取）==========
+    receipt_no = Column(Text, nullable=False, index=True, comment="新方舟销售单号")
     model = Column(Text, nullable=True, comment="产品型号")
     quantity = Column(Numeric(12, 2), nullable=True, comment="签收数量")
     amount = Column(Numeric(14, 2), nullable=True, comment="签收金额")
@@ -107,19 +144,53 @@ class OurReceipt(Base, TimestampMixin):
     customer_name = Column(Text, nullable=True, comment="结算客户名称")
     nc_order_no = Column(Text, nullable=True, index=True, comment="NC订单号")
     product_line = Column(Text, nullable=True, comment="产品线")
-    batch_id = Column(Text, nullable=True, comment="导入批次")
-    raw_data = Column(JsonType, nullable=True, comment="原始98列数据")
+    raw_data = Column(JsonType, nullable=True, comment="原始94列数据")
 
+    # ========== 开票状态（核心集）==========
+    billing_status = Column(
+        Text,
+        nullable=False,
+        default="unbilled",
+        index=True,
+        comment="开票状态：unbilled(未开)/billed(已开)/split(已拆分)/partial(部分开票)",
+    )
+    invoice_no = Column(Text, nullable=True, comment="发票号")
+    invoice_date = Column(Text, nullable=True, comment="开票日期")
+    remark = Column(Text, nullable=True, comment="备注")
+
+    # ========== 拆分相关 ==========
+    split_parent_id = Column(Integer, ForeignKey("receipts.id"), nullable=True, index=True, comment="拆分父行ID")
+    split_note = Column(Text, nullable=True, comment="拆分说明")
+
+    # ========== 扩展字段（客户级配置）==========
+    extra_fields = Column(JsonType, nullable=True, comment="扩展列值（JSONB）")
+
+    # ========== 差异判断 ==========
+    diff_type = Column(
+        Text,
+        nullable=True,
+        index=True,
+        comment="差异类型：none/time_diff/price_diff/qty_diff/customer_not_received/our_not_received",
+    )
+    diff_note = Column(Text, nullable=True, comment="差异说明")
+    resolved_period = Column(Text, nullable=True, comment="解决期间 YYYYMM")
+
+    # ========== 审计 ==========
+    created_by = Column(Integer, nullable=True, comment="创建人")
+    updated_by = Column(Integer, nullable=True, comment="更新人")
+
+    # 关系
     customer = relationship("Customer", backref="receipts")
+    split_parent = relationship("Receipt", remote_side=[id], backref="split_children")
 
     def __repr__(self):
-        return f"<OurReceipt(id={self.id}, receipt_no='{self.receipt_no}', model='{self.model}')>"
+        return f"<Receipt(id={self.id}, receipt_no='{self.receipt_no}', status='{self.billing_status}')>"
 
 
-class CustomerSettlement(Base, TimestampMixin):
-    """客户方结算单"""
+class CustomerStatement(Base, TimestampMixin):
+    """客户对账单（核对桌专用）"""
 
-    __tablename__ = "customer_settlements"
+    __tablename__ = "customer_statements"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True, comment="关联客户")
@@ -139,14 +210,14 @@ class CustomerSettlement(Base, TimestampMixin):
     # 客户原始数据
     raw_data = Column(JsonType, nullable=True)
 
-    customer = relationship("Customer", backref="settlements")
+    customer = relationship("Customer", backref="statements")
 
     def __repr__(self):
-        return f"<CustomerSettlement(id={self.id}, match_key='{self.match_key}')>"
+        return f"<CustomerStatement(id={self.id}, match_key='{self.match_key}')>"
 
 
 class MatchResult(Base, TimestampMixin):
-    """匹配结果"""
+    """匹配结果（核对桌专用）"""
 
     __tablename__ = "match_results"
 
@@ -155,8 +226,8 @@ class MatchResult(Base, TimestampMixin):
     period = Column(Text, nullable=False, index=True, comment="对账期间 YYYYMM")
     batch_id = Column(Text, nullable=True, comment="导入批次")
 
-    receipt_id = Column(Integer, ForeignKey("our_receipts.id"), nullable=True, comment="我方记录ID")
-    settlement_id = Column(Integer, ForeignKey("customer_settlements.id"), nullable=True, comment="客户方记录ID")
+    receipt_id = Column(Integer, ForeignKey("receipts.id"), nullable=True, comment="我方记录ID")
+    statement_id = Column(Integer, ForeignKey("customer_statements.id"), nullable=True, comment="客户方记录ID")
 
     match_type = Column(Text, nullable=True, comment="匹配类型")
     confidence = Column(Numeric(5, 2), nullable=True, comment="置信度 0.00-1.00")
@@ -170,11 +241,65 @@ class MatchResult(Base, TimestampMixin):
     operator_id = Column(Integer, nullable=True, comment="人工操作人")
 
     customer = relationship("Customer", backref="match_results")
-    receipt = relationship("OurReceipt", backref="match_results")
-    settlement = relationship("CustomerSettlement", backref="match_results")
+    receipt = relationship("Receipt", backref="match_results")
+    statement = relationship("CustomerStatement", backref="match_results")
 
     def __repr__(self):
         return f"<MatchResult(id={self.id}, status='{self.status}', type='{self.match_type}')>"
+
+
+class Invoice(Base, TimestampMixin):
+    """发票记录"""
+
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    receipt_id = Column(Integer, ForeignKey("receipts.id"), nullable=False, index=True, comment="台账行ID")
+
+    invoice_no = Column(Text, nullable=False, comment="发票号")
+    invoice_date = Column(Text, nullable=False, comment="开票日期")
+    amount = Column(Numeric(14, 2), nullable=False, comment="开票金额")
+    quantity = Column(Numeric(12, 2), nullable=False, comment="开票数量")
+
+    invoice_type = Column(Text, nullable=False, default="blue", comment="blue(蓝票)/red(红票)")
+    red_notice_no = Column(Text, nullable=True, comment="红字通知单号（红票）")
+    original_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True, comment="原蓝票ID（红票）")
+
+    created_by = Column(Integer, nullable=True, comment="创建人")
+
+    # 关系
+    receipt = relationship("Receipt", backref="invoices")
+    original_invoice = relationship("Invoice", remote_side=[id], backref="red_invoices")
+
+    def __repr__(self):
+        return f"<Invoice(id={self.id}, invoice_no='{self.invoice_no}', type='{self.invoice_type}')>"
+
+
+class Adjustment(Base, TimestampMixin):
+    """调账/红冲记录"""
+
+    __tablename__ = "adjustments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True, comment="关联客户")
+    receipt_id = Column(Integer, ForeignKey("receipts.id"), nullable=True, comment="关联台账行")
+
+    adjustment_type = Column(Text, nullable=False, comment="类型：return(退货)/price_adjust(调价)/qty_adjust(数量调整)")
+    original_receipt_no = Column(Text, nullable=True, comment="原单号")
+    adjustment_receipt_no = Column(Text, nullable=True, comment="调账单号")
+    red_notice_no = Column(Text, nullable=True, comment="红字通知单号")
+
+    status = Column(Text, default="pending", nullable=False, comment="pending/confirmed/completed")
+    note = Column(Text, nullable=True, comment="说明")
+
+    created_by = Column(Integer, nullable=True, comment="创建人")
+
+    # 关系
+    customer = relationship("Customer", backref="adjustments")
+    receipt = relationship("Receipt", backref="adjustments")
+
+    def __repr__(self):
+        return f"<Adjustment(id={self.id}, type='{self.adjustment_type}', status='{self.status}')>"
 
 
 class CorrectionLog(Base, TimestampMixin):
@@ -195,41 +320,3 @@ class CorrectionLog(Base, TimestampMixin):
 
     def __repr__(self):
         return f"<CorrectionLog(id={self.id}, type='{self.operation_type}')>"
-
-
-class EngineConfig(Base, TimestampMixin):
-    """引擎配置"""
-
-    __tablename__ = "engine_configs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, unique=True, comment="关联客户")
-    engine_name = Column(Text, nullable=True, comment="引擎类名")
-    engine_version = Column(Text, nullable=True, comment="版本号")
-    config_params = Column(JsonType, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False, comment="是否启用")
-
-    customer = relationship("Customer", back_populates="engine_config")
-
-    def __repr__(self):
-        return f"<EngineConfig(id={self.id}, engine='{self.engine_name}')>"
-
-
-class UploadHistory(Base, TimestampMixin):
-    """上传历史记录"""
-
-    __tablename__ = "upload_history"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    upload_type = Column(Text, nullable=False, comment="our / settlement")
-    customer_id = Column(Integer, nullable=True, comment="关联客户ID（我方上传为0）")
-    customer_name = Column(Text, nullable=True, comment="客户名称")
-    period = Column(Text, nullable=False, index=True, comment="对账期间 YYYYMM")
-    file_name = Column(Text, nullable=True, comment="原始文件名")
-    total = Column(Integer, default=0, comment="总行数")
-    parsed = Column(Integer, default=0, comment="解析行数")
-    status = Column(Text, default="success", comment="success / failed")
-    message = Column(Text, nullable=True, comment="结果消息")
-
-    def __repr__(self):
-        return f"<UploadHistory(id={self.id}, type='{self.upload_type}', period='{self.period}')>"

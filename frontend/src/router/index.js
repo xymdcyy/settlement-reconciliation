@@ -1,39 +1,44 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import HomePage from '../views/HomePage.vue'
+import CustomerDetailPage from '../views/CustomerDetailPage.vue'
+import SystemAdminPage from '../views/SystemAdminPage.vue'
+import MigrationPage from '../views/MigrationPage.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/upload',
+    name: 'Home',
+    component: HomePage,
+    meta: { title: '工作台' }
   },
   {
-    path: '/upload',
-    name: 'Upload',
-    component: () => import('../views/UploadPage.vue'),
-    meta: { title: '上传对账单' },
+    path: '/customer/:id',
+    name: 'CustomerDetail',
+    component: CustomerDetailPage,
+    meta: { title: '客户详情' }
   },
   {
-    path: '/workspace',
-    name: 'Workspace',
-    component: () => import('../views/WorkspacePage.vue'),
-    meta: { title: '在线比对工作台' },
+    path: '/admin',
+    name: 'SystemAdmin',
+    component: SystemAdminPage,
+    meta: { title: '系统管理' }
   },
   {
-    path: '/history',
-    name: 'History',
-    component: () => import('../views/HistoryPage.vue'),
-    meta: { title: '历史查询' },
-  },
-  {
-    path: '/customers',
-    name: 'Customers',
-    component: () => import('../views/CustomersPage.vue'),
-    meta: { title: '客户管理' },
-  },
+    path: '/migration',
+    name: 'Migration',
+    component: MigrationPage,
+    meta: { title: '数据迁移' }
+  }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
+  routes
+})
+
+router.beforeEach((to, from, next) => {
+  document.title = to.meta.title ? `${to.meta.title} - 结算对账中心` : '结算对账中心'
+  next()
 })
 
 export default router
