@@ -126,16 +126,34 @@ class MigrationRuleEngine:
         if pd.isna(value):
             return "unbilled"
 
+        # 如果值已经是标准枚举值（billed/unbilled/split），保留不变
+        # 这是为了保留特殊处理规则设置的值
         value_str = str(value).strip()
+        if value_str in ["billed", "unbilled", "split", "partial"]:
+            return value_str
 
-        # 如果值在映射表中，返回映射后的值
+        # 尝试多种匹配方式：
+        # 1. 直接用原始值匹配（处理数字类型的 key）
+        if value in status_mapping:
+            return status_mapping[value]
+
+        # 2. 用字符串匹配（处理字符串类型的 key）
         if value_str in status_mapping:
             return status_mapping[value_str]
 
-        # 如果值已经是标准枚举值（billed/unbilled/split），保留不变
-        # 这是为了保留特殊处理规则设置的值
-        if value_str in ["billed", "unbilled", "split", "partial"]:
-            return value_str
+        # 3. 如果值是数字字符串，尝试转换为数字匹配（处理 YAML 中的数字 key）
+        try:
+            value_num = int(value_str)
+            if value_num in status_mapping:
+                return status_mapping[value_num]
+        except (ValueError, TypeError):
+            pass
+
+        # 4. 如果值是数字，尝试转换为字符串匹配（处理 YAML 中的字符串 key）
+        if isinstance(value, (int, float)):
+            value_str_from_num = str(int(value))
+            if value_str_from_num in status_mapping:
+                return status_mapping[value_str_from_num]
 
         # 默认返回 unbilled
         return "unbilled"

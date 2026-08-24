@@ -1,0 +1,27 @@
+customer: 全福元
+slug: quanfuyuan
+
+# 手工区列名映射（根据实际台账结构，待确认）
+column_mapping:
+  是否开票: billing_status
+  发票号: invoice_no
+  开票日期: invoice_date
+  拆分: split_note
+  备注: remark
+
+# 状态值映射
+status_mapping:
+  已开: billed
+  111: billed
+  手工标识已开: billed
+  25年已开: billed
+  26年已开: billed
+  前期已开: billed
+  未开: unbilled
+  未开确定: unbilled
+  已拆分: split
+
+# 特殊处理规则
+special_rules:
+  - pattern: "重复开具：(.+)"
+    action: "billing_status=billed, remark=重复开具：\\1"

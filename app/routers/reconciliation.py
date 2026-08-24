@@ -2,7 +2,7 @@
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,30 @@ from app.schemas import (
 )
 from app.services.match_service import MatchService
 from app.services.export_service import ExportService
+from app.services.reconciliation_upload_service import ReconciliationUploadService
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
+
+
+@router.post("/upload-statement")
+def upload_statement(
+    customer_id: int = Form(...),
+    period: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """上传客户对账单"""
+    try:
+        file_content = file.file.read()
+        result = ReconciliationUploadService.upload_statement(
+            customer_id=customer_id,
+            period=period,
+            file_content=file_content,
+            db=db,
+        )
+        return result
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/run", response_model=ReconciliationRunResponse)
