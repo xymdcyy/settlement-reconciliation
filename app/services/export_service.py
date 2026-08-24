@@ -15,6 +15,31 @@ class ExportService:
     """报表导出服务"""
 
     @staticmethod
+    def _write_df_to_excel(df: pd.DataFrame, sheet_name: str) -> BytesIO:
+        """
+        将 DataFrame 写入 Excel 并调整列宽（三个导出方法共用）。
+
+        返回定位到起始位置的 BytesIO。
+        """
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            ws = writer.sheets[sheet_name]
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    try:
+                        cell_len = len(str(cell.value or ""))
+                        if cell_len > max_len:
+                            max_len = cell_len
+                    except Exception:
+                        pass
+                adjusted_width = min(max_len + 4, 50)
+                ws.column_dimensions[col[0].column_letter].width = adjusted_width
+        output.seek(0)
+        return output
+
+    @staticmethod
     def export_receipts_to_excel(
         customer_id: int,
         db: Session,
@@ -45,49 +70,23 @@ class ExportService:
 
         # 如果没有数据，返回空 Excel
         if not receipts:
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                pd.DataFrame().to_excel(writer, sheet_name="台账", index=False)
-            output.seek(0)
-            return output
+            return ExportService._write_df_to_excel(pd.DataFrame(), "台账")
 
         # 从 raw_data 提取列名（与原始台账一致）
-        # 取第一条记录的 raw_data keys 作为列名
-        first_raw = receipts[0].raw_data or {}
-        columns = list(first_raw.keys())
+        # 取所有记录 raw_data keys 的并集，保持首次出现的顺序，
+        # 避免只取第一行导致后续行独有的列（如红通号）被静默丢弃
+        columns = list(dict.fromkeys(
+            key for r in receipts for key in (r.raw_data or {}).keys()
+        ))
 
         # 构建 DataFrame
         data = []
         for r in receipts:
-            row = {}
             raw = r.raw_data or {}
-            for col in columns:
-                row[col] = raw.get(col, "")
-            data.append(row)
+            data.append({col: raw.get(col, "") for col in columns})
 
         df = pd.DataFrame(data, columns=columns)
-
-        # 写入 Excel
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="台账", index=False)
-
-            # 调整列宽
-            ws = writer.sheets["台账"]
-            for col in ws.columns:
-                max_len = 0
-                for cell in col:
-                    try:
-                        cell_len = len(str(cell.value or ""))
-                        if cell_len > max_len:
-                            max_len = cell_len
-                    except Exception:
-                        pass
-                adjusted_width = min(max_len + 4, 50)
-                ws.column_dimensions[col[0].column_letter].width = adjusted_width
-
-        output.seek(0)
-        return output
+        return ExportService._write_df_to_excel(df, "台账")
 
     @staticmethod
     def export_billing_list_to_excel(
@@ -121,28 +120,7 @@ class ExportService:
             "新方舟销售单号", "产品型号", "签收数量", "签收金额", "单价",
             "结算客户名称", "签收日期", "单据类型", "NC订单号", "产品线",
         ])
-
-        # 写入 Excel
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="开票清单", index=False)
-
-            # 调整列宽
-            ws = writer.sheets["开票清单"]
-            for col in ws.columns:
-                max_len = 0
-                for cell in col:
-                    try:
-                        cell_len = len(str(cell.value or ""))
-                        if cell_len > max_len:
-                            max_len = cell_len
-                    except Exception:
-                        pass
-                adjusted_width = min(max_len + 4, 50)
-                ws.column_dimensions[col[0].column_letter].width = adjusted_width
-
-        output.seek(0)
-        return output
+        return ExportService._write_df_to_excel(df, "开票清单")
 
     @staticmethod
     def export_red_flush_confirmation_to_excel(
@@ -179,28 +157,7 @@ class ExportService:
             "退货单号", "产品型号", "退货数量", "退货金额", "单价",
             "蓝票号", "开票日期", "蓝票单号",
         ])
-
-        # 写入 Excel
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, sheet_name="红冲确认单", index=False)
-
-            # 调整列宽
-            ws = writer.sheets["红冲确认单"]
-            for col in ws.columns:
-                max_len = 0
-                for cell in col:
-                    try:
-                        cell_len = len(str(cell.value or ""))
-                        if cell_len > max_len:
-                            max_len = cell_len
-                    except Exception:
-                        pass
-                adjusted_width = min(max_len + 4, 50)
-                ws.column_dimensions[col[0].column_letter].width = adjusted_width
-
-        output.seek(0)
-        return output
+        return ExportService._write_df_to_excel(df, "红冲确认单")
 
     @staticmethod
     def export_reconciliation(customer_id: int, period: str, customer_name: str, db: Session) -> BytesIO:

@@ -160,6 +160,35 @@ class TestExportReceipts:
         for col in expected_columns:
             assert col in df.columns
 
+    def test_export_receipts_union_columns_across_rows(self, db_session, sample_customer):
+        """回归测试：后续行独有的列（如红通号）不应被丢弃"""
+        # 第一行：基础列
+        r1 = Receipt(
+            customer_id=sample_customer.id, period="202608",
+            receipt_no="S101001", model="75V69H", quantity=5, amount=34650.0,
+            billing_status="unbilled",
+            raw_data={"新方舟销售单号": "S101001", "产品型号": "75V69H", "签收数量": 5},
+        )
+        # 第二行：多出"红通号"列
+        r2 = Receipt(
+            customer_id=sample_customer.id, period="202608",
+            receipt_no="S101002", model="75V69H", quantity=-3, amount=-20790.0,
+            billing_status="billed",
+            raw_data={"新方舟销售单号": "S101002", "产品型号": "75V69H", "签收数量": -3, "红通号": "RED123"},
+        )
+        db_session.add_all([r1, r2])
+        db_session.commit()
+
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id, db=db_session,
+        )
+        df = pd.read_excel(output, sheet_name=0)
+
+        # "红通号" 列必须存在（来自第二行），且第二行有值、第一行为空
+        assert "红通号" in df.columns
+        row2 = df[df["新方舟销售单号"] == "S101002"].iloc[0]
+        assert row2["红通号"] == "RED123"
+
     def test_export_receipts_performance(self, db_session, sample_customer):
         """测试导出性能（1 万行 < 5 秒）"""
         # 创建 1 万条记录

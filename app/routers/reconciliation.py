@@ -43,12 +43,19 @@ def upload_statement(
         return {"status": "error", "message": str(e)}
 
 
+# 合法的差异类型（'none' 不允许，否则不会进入未决池）
+ALLOWED_DIFF_TYPES = {"time_diff", "price_diff", "qty_diff", "customer_not_received", "our_not_received"}
+
+
 @router.post("/mark-diff")
 def mark_diff(
     request: MarkDiffRequest,
     db: Session = Depends(get_db),
 ):
     """标记差异（时间差/真差异）→ 挂入未决池"""
+    if request.diff_type not in ALLOWED_DIFF_TYPES:
+        return {"status": "error", "message": f"非法差异类型: {request.diff_type}，可选: {sorted(ALLOWED_DIFF_TYPES)}"}
+
     receipt = db.query(Receipt).filter(Receipt.id == request.receipt_id).first()
     if not receipt:
         return {"status": "error", "message": f"台账记录不存在: {request.receipt_id}"}

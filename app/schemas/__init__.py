@@ -298,8 +298,9 @@ class NoteRequest(BaseModel):
 
 class CorrectionResponse(BaseModel):
     """人工纠正响应"""
-    status: str
+    success: bool
     message: str
+    result_id: Optional[int] = None
 
 
 # ========== 迁移相关 ==========

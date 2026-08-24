@@ -102,7 +102,7 @@ class CorrectionService:
         before_data = {
             "status": match.status,
             "receipt_id": match.receipt_id,
-            "settlement_id": match.statement_id,
+            "statement_id": match.statement_id,
         }
 
         # 分别创建两条未匹配记录

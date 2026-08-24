@@ -1,9 +1,58 @@
 import axios from 'axios'
 
+// 后端地址：优先取环境变量 VITE_API_BASE，默认 localhost
+// 所有组件统一从这里取，不要硬编码 http://localhost:8000
+export const API_BASE = import.meta.env?.VITE_API_BASE || 'http://localhost:8000'
+export const API_URL = `${API_BASE}/api`
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: API_URL,
   timeout: 30000,
 })
+
+/**
+ * 通用 Excel 下载：POST JSON → 接收 blob → 触发浏览器下载
+ * @param {string} path API 路径（如 /billing/generate）
+ * @param {object} payload POST body
+ * @param {string} filename 下载文件名
+ */
+export async function downloadExcel(path, payload, filename) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw new Error('下载失败')
+  const blob = await response.blob()
+  const url = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  window.URL.revokeObjectURL(url)
+}
+
+/**
+ * 通用 Excel 下载：GET → 新窗口打开（带 query string）
+ * @param {string} path API 路径（含 query）
+ */
+export function downloadExcelGet(path) {
+  window.open(`${API_URL}${path}`, '_blank')
+}
+
+/**
+ * 通用 JSON POST（返回解析后的 JSON）
+ * @param {string} path API 路径
+ * @param {object} payload POST body
+ */
+export async function postJson(path, payload) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return response.json()
+}
 
 // ========== 客户相关 ==========
 

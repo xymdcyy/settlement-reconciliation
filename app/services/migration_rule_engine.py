@@ -110,15 +110,14 @@ class MigrationRuleEngine:
 
     @staticmethod
     def _add_extra_field(extra_fields: Optional[dict], field_name: str, value) -> dict:
-        """添加扩展字段到 extra_fields 字典"""
+        """添加扩展字段到 extra_fields 字典（返回新 dict，不做原地修改）。
+
+        原地修改在 ORM 绑定的 JSONB 字段上会绕过 SQLAlchemy change tracking，
+        导致静默丢失更新；返回新字典可避免该坑。
+        """
         if pd.isna(value):
             return extra_fields
-
-        if extra_fields is None:
-            extra_fields = {}
-
-        extra_fields[field_name] = value
-        return extra_fields
+        return {**(extra_fields or {}), field_name: value}
 
     @staticmethod
     def _map_status(value, status_mapping: dict) -> str:

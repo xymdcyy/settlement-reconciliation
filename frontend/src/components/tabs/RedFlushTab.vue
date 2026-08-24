@@ -67,7 +67,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getReturnReceipts, findBlueInvoice, batchFindBlueInvoices, recordRedNotice } from '../../api'
+import { getReturnReceipts, findBlueInvoice, batchFindBlueInvoices, recordRedNotice, downloadExcel } from '../../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps({
@@ -140,29 +140,7 @@ const batchFindBlue = async () => {
 const generateConfirm = async () => {
   try {
     const receiptIds = selectedRows.value.map(r => r.id)
-
-    // 下载文件
-    const url = `http://localhost:8000/api/red-flush/generate`
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(receiptIds),
-    })
-
-    if (!response.ok) {
-      throw new Error('生成失败')
-    }
-
-    const blob = await response.blob()
-    const downloadUrl = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = downloadUrl
-    a.download = `红冲确认单_${receiptIds.length}条.xlsx`
-    a.click()
-    window.URL.revokeObjectURL(downloadUrl)
-
+    await downloadExcel('/red-flush/generate', receiptIds, `红冲确认单_${receiptIds.length}条.xlsx`)
     ElMessage.success('生成成功')
   } catch (error) {
     ElMessage.error('生成失败: ' + error.message)

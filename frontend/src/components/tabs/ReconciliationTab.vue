@@ -221,7 +221,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { runReconciliation, getReconciliationStatus, getReconciliationResults } from '../../api'
+import { runReconciliation, getReconciliationStatus, getReconciliationResults, postJson, downloadExcelGet, API_URL } from '../../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ComparisonTable from '../ComparisonTable.vue'
 
@@ -308,7 +308,7 @@ const uploadFile = async () => {
     formData.append('period', uploadPeriod.value)
     formData.append('file', selectedFile.value)
 
-    const response = await fetch('http://localhost:8000/api/reconciliation/upload-statement', {
+    const response = await fetch(`${API_URL}/reconciliation/upload-statement`, {
       method: 'POST',
       body: formData,
     })
@@ -354,8 +354,7 @@ const runMatch = async () => {
 }
 
 const exportResult = () => {
-  const url = `http://localhost:8000/api/reconciliation/export?customer_id=${props.customerId}&period=${period.value}`
-  window.open(url, '_blank')
+  downloadExcelGet(`/reconciliation/export?customer_id=${props.customerId}&period=${period.value}`)
 }
 
 // 人工纠正（Ticket 06）
@@ -415,18 +414,13 @@ const confirmManualMatch = async () => {
   const settlementId = matchNeedSide.value === 'settlement' ? matchSelectedId.value : source.settlement.id
 
   try {
-    const response = await fetch('http://localhost:8000/api/corrections/manual-match', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_id: props.customerId,
-        period: period.value,
-        receipt_id: receiptId,
-        settlement_id: settlementId,
-        reason: matchReason.value || '人工匹配',
-      }),
+    const result = await postJson('/corrections/manual-match', {
+      customer_id: props.customerId,
+      period: period.value,
+      receipt_id: receiptId,
+      settlement_id: settlementId,
+      reason: matchReason.value || '人工匹配',
     })
-    const result = await response.json()
     if (result.success !== false) {
       ElMessage.success('手动匹配成功')
       matchDialogVisible.value = false
@@ -448,17 +442,12 @@ const onUnmatch = async (row) => {
     return
   }
   try {
-    const response = await fetch('http://localhost:8000/api/corrections/unmatch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_id: props.customerId,
-        period: period.value,
-        result_id: row.id,
-        reason: '解除匹配',
-      }),
+    const result = await postJson('/corrections/unmatch', {
+      customer_id: props.customerId,
+      period: period.value,
+      result_id: row.id,
+      reason: '解除匹配',
     })
-    const result = await response.json()
     if (result.success !== false) {
       ElMessage.success('已解除匹配')
       onPeriodChange()
@@ -483,17 +472,12 @@ const onIgnore = async (row) => {
     return
   }
   try {
-    const response = await fetch('http://localhost:8000/api/corrections/ignore', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer_id: props.customerId,
-        period: period.value,
-        result_id: row.id,
-        reason,
-      }),
+    const result = await postJson('/corrections/ignore', {
+      customer_id: props.customerId,
+      period: period.value,
+      result_id: row.id,
+      reason,
     })
-    const result = await response.json()
     if (result.success !== false) {
       ElMessage.success('已忽略')
       onPeriodChange()
@@ -520,16 +504,11 @@ const onMarkDiff = (row) => {
 
 const confirmMarkDiff = async () => {
   try {
-    const response = await fetch('http://localhost:8000/api/reconciliation/mark-diff', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        receipt_id: diffRow.value.receipt.id,
-        diff_type: diffType.value,
-        diff_note: diffNote.value,
-      }),
+    const result = await postJson('/reconciliation/mark-diff', {
+      receipt_id: diffRow.value.receipt.id,
+      diff_type: diffType.value,
+      diff_note: diffNote.value,
     })
-    const result = await response.json()
     if (result.status === 'success') {
       ElMessage.success('已标记差异，挂入未决池')
       diffDialogVisible.value = false
