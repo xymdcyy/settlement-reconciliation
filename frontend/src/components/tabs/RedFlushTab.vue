@@ -137,8 +137,36 @@ const batchFindBlue = async () => {
   }
 }
 
-const generateConfirm = () => {
-  ElMessage.info('生成功能开发中')
+const generateConfirm = async () => {
+  try {
+    const receiptIds = selectedRows.value.map(r => r.id)
+
+    // 下载文件
+    const url = `http://localhost:8000/api/red-flush/generate`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(receiptIds),
+    })
+
+    if (!response.ok) {
+      throw new Error('生成失败')
+    }
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = downloadUrl
+    a.download = `红冲确认单_${receiptIds.length}条.xlsx`
+    a.click()
+    window.URL.revokeObjectURL(downloadUrl)
+
+    ElMessage.success('生成成功')
+  } catch (error) {
+    ElMessage.error('生成失败: ' + error.message)
+  }
 }
 
 const recordRed = async (row) => {

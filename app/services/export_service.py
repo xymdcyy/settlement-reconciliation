@@ -3,6 +3,7 @@
 """对账结果导出为 Excel（多工作表）"""
 
 from io import BytesIO
+from typing import Optional
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -12,6 +13,194 @@ from app.models import CustomerStatement, MatchResult, Receipt
 
 class ExportService:
     """报表导出服务"""
+
+    @staticmethod
+    def export_receipts_to_excel(
+        customer_id: int,
+        db: Session,
+        period: Optional[str] = None,
+        billing_status: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> BytesIO:
+        """
+        导出台账为 Excel
+
+        列名从 raw_data 中提取（与原始台账一致）
+        支持筛选：期间/状态/搜索
+        """
+        # 查询数据
+        query = db.query(Receipt).filter(Receipt.customer_id == customer_id)
+
+        if period:
+            query = query.filter(Receipt.period == period)
+        if billing_status:
+            query = query.filter(Receipt.billing_status == billing_status)
+        if search:
+            query = query.filter(
+                (Receipt.receipt_no.contains(search))
+                | (Receipt.model.contains(search))
+            )
+
+        receipts = query.order_by(Receipt.receipt_date.desc()).all()
+
+        # 如果没有数据，返回空 Excel
+        if not receipts:
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                pd.DataFrame().to_excel(writer, sheet_name="台账", index=False)
+            output.seek(0)
+            return output
+
+        # 从 raw_data 提取列名（与原始台账一致）
+        # 取第一条记录的 raw_data keys 作为列名
+        first_raw = receipts[0].raw_data or {}
+        columns = list(first_raw.keys())
+
+        # 构建 DataFrame
+        data = []
+        for r in receipts:
+            row = {}
+            raw = r.raw_data or {}
+            for col in columns:
+                row[col] = raw.get(col, "")
+            data.append(row)
+
+        df = pd.DataFrame(data, columns=columns)
+
+        # 写入 Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="台账", index=False)
+
+            # 调整列宽
+            ws = writer.sheets["台账"]
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    try:
+                        cell_len = len(str(cell.value or ""))
+                        if cell_len > max_len:
+                            max_len = cell_len
+                    except Exception:
+                        pass
+                adjusted_width = min(max_len + 4, 50)
+                ws.column_dimensions[col[0].column_letter].width = adjusted_width
+
+        output.seek(0)
+        return output
+
+    @staticmethod
+    def export_billing_list_to_excel(
+        receipt_ids: list[int],
+        db: Session,
+    ) -> BytesIO:
+        """
+        导出开票清单为 Excel
+
+        包含：单号/型号/数量/金额/客户/签收日期
+        """
+        receipts = db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).all() if receipt_ids else []
+
+        # 构建 DataFrame
+        data = []
+        for r in receipts:
+            data.append({
+                "新方舟销售单号": r.receipt_no,
+                "产品型号": r.model,
+                "签收数量": float(r.quantity) if r.quantity else 0,
+                "签收金额": float(r.amount) if r.amount else 0,
+                "单价": float(r.unit_price) if r.unit_price else 0,
+                "结算客户名称": r.customer_name,
+                "签收日期": r.receipt_date,
+                "单据类型": r.doc_type,
+                "NC订单号": r.nc_order_no,
+                "产品线": r.product_line,
+            })
+
+        df = pd.DataFrame(data) if data else pd.DataFrame(columns=[
+            "新方舟销售单号", "产品型号", "签收数量", "签收金额", "单价",
+            "结算客户名称", "签收日期", "单据类型", "NC订单号", "产品线",
+        ])
+
+        # 写入 Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="开票清单", index=False)
+
+            # 调整列宽
+            ws = writer.sheets["开票清单"]
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    try:
+                        cell_len = len(str(cell.value or ""))
+                        if cell_len > max_len:
+                            max_len = cell_len
+                    except Exception:
+                        pass
+                adjusted_width = min(max_len + 4, 50)
+                ws.column_dimensions[col[0].column_letter].width = adjusted_width
+
+        output.seek(0)
+        return output
+
+    @staticmethod
+    def export_red_flush_confirmation_to_excel(
+        matches: list[dict],
+        db: Session,
+    ) -> BytesIO:
+        """
+        导出红冲确认单为 Excel
+
+        matches: [{"return_receipt": Receipt, "blue_receipt": Receipt}]
+        包含：退货单号/型号/退货数量/退货金额/蓝票号/开票日期
+        """
+        # 构建 DataFrame
+        data = []
+        for match in matches:
+            return_r = match.get("return_receipt")
+            blue_r = match.get("blue_receipt")
+
+            if not return_r:
+                continue
+
+            data.append({
+                "退货单号": return_r.receipt_no,
+                "产品型号": return_r.model,
+                "退货数量": float(return_r.quantity) if return_r.quantity else 0,
+                "退货金额": float(return_r.amount) if return_r.amount else 0,
+                "单价": float(return_r.unit_price) if return_r.unit_price else 0,
+                "蓝票号": blue_r.invoice_no if blue_r else "",
+                "开票日期": blue_r.invoice_date if blue_r else "",
+                "蓝票单号": blue_r.receipt_no if blue_r else "",
+            })
+
+        df = pd.DataFrame(data) if data else pd.DataFrame(columns=[
+            "退货单号", "产品型号", "退货数量", "退货金额", "单价",
+            "蓝票号", "开票日期", "蓝票单号",
+        ])
+
+        # 写入 Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="红冲确认单", index=False)
+
+            # 调整列宽
+            ws = writer.sheets["红冲确认单"]
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    try:
+                        cell_len = len(str(cell.value or ""))
+                        if cell_len > max_len:
+                            max_len = cell_len
+                    except Exception:
+                        pass
+                adjusted_width = min(max_len + 4, 50)
+                ws.column_dimensions[col[0].column_letter].width = adjusted_width
+
+        output.seek(0)
+        return output
 
     @staticmethod
     def export_reconciliation(customer_id: int, period: str, customer_name: str, db: Session) -> BytesIO:

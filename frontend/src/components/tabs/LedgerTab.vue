@@ -272,8 +272,28 @@ const confirmSplit = async () => {
   }
 }
 
-const exportData = () => {
-  ElMessage.info('导出功能开发中')
+const exportData = async () => {
+  try {
+    const params = {
+      customer_id: props.customerId,
+      period: filters.value.period || undefined,
+      billing_status: filters.value.billing_status || undefined,
+      search: filters.value.search || undefined,
+    }
+
+    // 构建查询字符串
+    const queryString = new URLSearchParams(
+      Object.entries(params).filter(([_, v]) => v !== undefined)
+    ).toString()
+
+    // 下载文件
+    const url = `http://localhost:8000/api/receipts/export?${queryString}`
+    window.open(url, '_blank')
+
+    ElMessage.success('导出成功')
+  } catch (error) {
+    ElMessage.error('导出失败: ' + error.message)
+  }
 }
 
 const showImportDialog = ref(false)

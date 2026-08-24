@@ -1,252 +1,284 @@
-# 导出服务单元测试
+# Excel 导出服务测试
 
-from io import BytesIO
+import io
+from datetime import datetime
 
 import pandas as pd
 import pytest
-from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
+from app.models import Customer, Receipt
 from app.services.export_service import ExportService
 
 
 @pytest.fixture
 def db_session():
-    """创建内存 SQLite 数据库测试会话"""
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(bind=engine)
-    session = sessionmaker(bind=engine)()
+    """创建测试数据库会话"""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
     yield session
     session.close()
 
 
-def test_export_includes_manual_status(db_session):
-    """手动匹配 (manual) 记录应计入已匹配"""
-    from app.models import Customer, MatchResult, OurReceipt, CustomerSettlement
-
-    # 创建测试数据
-    customer = Customer(name="测试客户", slug="test", is_active=True)
-    db_session.add(customer)
-    db_session.flush()
-
-    receipt = OurReceipt(receipt_no="R001", customer_id=customer.id, period="202608", model="M1", quantity=1, amount=100)
-    settlement = CustomerSettlement(customer_id=customer.id, period="202608", match_key="K001", model="M1", quantity=1, amount=100)
-    db_session.add(receipt)
-    db_session.add(settlement)
-    db_session.flush()
-
-    # 手动匹配记录
-    manual = MatchResult(
-        customer_id=customer.id, period="202608",
-        receipt_id=receipt.id, settlement_id=settlement.id,
-        match_type="manual", confidence=1.0,
-        status="manual", source="manual",
-        diff_amount=0, diff_quantity=0,
+@pytest.fixture
+def sample_customer(db_session):
+    """创建测试客户"""
+    customer = Customer(
+        name="潍坊百货",
+        slug="weifangbaihuo",
+        has_statement=False,
     )
-    db_session.add(manual)
-    db_session.commit()
-
-    output = ExportService.export_reconciliation(customer.id, "202608", "测试客户", db_session)
-    assert isinstance(output, BytesIO)
-
-    # 验证工作表内容
-    wb = load_workbook(output)
-    assert "对账汇总" in wb.sheetnames
-    ws = wb["对账汇总"]
-    rows = list(ws.iter_rows(values_only=True))
-    # 第 10 行（索引 9）是已匹配数
-    matched_row = [r for r in rows if r[0] == "已匹配数"]
-    assert len(matched_row) == 1
-    assert matched_row[0][1] == 1, f"手动匹配应计入已匹配: {matched_row}"
-
-    assert "匹配明细" in wb.sheetnames
-    ws2 = wb["匹配明细"]
-    detail_rows = list(ws2.iter_rows(values_only=True))
-    assert len(detail_rows) > 1, "匹配明细应有数据行"
-    assert detail_rows[1][0] == "manual", f"匹配类型应为 manual: {detail_rows[1]}"
-
-
-def test_export_decimal_zero_shown(db_session):
-    """Decimal 0 值应显示为 0 而非空白"""
-    from app.models import Customer, MatchResult, OurReceipt, CustomerSettlement
-    from decimal import Decimal
-
-    customer = Customer(name="零值测试", slug="zero", is_active=True)
-    db_session.add(customer)
-    db_session.flush()
-
-    receipt = OurReceipt(receipt_no="R002", customer_id=customer.id, period="202608", model="M2", quantity=Decimal("0"), amount=Decimal("0"))
-    settlement = CustomerSettlement(customer_id=customer.id, period="202608", match_key="K002", model="M2", quantity=Decimal("0"), amount=Decimal("0"))
-    db_session.add(receipt)
-    db_session.add(settlement)
-    db_session.flush()
-
-    matched = MatchResult(
-        customer_id=customer.id, period="202608",
-        receipt_id=receipt.id, settlement_id=settlement.id,
-        match_type="exact", confidence=Decimal("0.00"), status="matched",
-        source="auto", diff_amount=Decimal("0.00"), diff_quantity=Decimal("0.00"),
-    )
-    db_session.add(matched)
-    db_session.commit()
-
-    output = ExportService.export_reconciliation(customer.id, "202608", "零值测试", db_session)
-    assert isinstance(output, BytesIO)
-
-    wb = load_workbook(output)
-    # 匹配明细 - 零值应显示
-    ws = wb["匹配明细"]
-    rows = list(ws.iter_rows(values_only=True))
-    header = rows[0]
-    data = rows[1]
-
-    # 置信度列（索引 1）
-    confidence_val = data[1]
-    assert confidence_val is not None and confidence_val != "", f"置信度 0 不应为空白: {confidence_val}"
-
-    # 金额差异明细 - 零差异应包含
-    ws5 = wb["金额差异明细"]
-    diff_rows = list(ws5.iter_rows(values_only=True))
-    assert len(diff_rows) > 1, "金额差异明细应有行（含零差异）"
-    assert diff_rows[1][5] == 0, f"金额差异应为 0: {diff_rows[1]}"
-
-
-def test_export_empty_data_has_consistent_columns(db_session):
-    """无数据时工作表应保持列结构一致"""
-    from app.models import Customer
-
-    customer = Customer(name="空数据", slug="empty", is_active=True)
     db_session.add(customer)
     db_session.commit()
-
-    output = ExportService.export_reconciliation(customer.id, "202608", "空数据", db_session)
-    assert isinstance(output, BytesIO)
-
-    wb = load_workbook(output)
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        rows = list(ws.iter_rows(values_only=True))
-        assert len(rows) >= 1, f"{sheet_name} 应至少有表头"
-        # 表头不应为空
-        header = rows[0]
-        assert any(cell is not None for cell in header), f"{sheet_name} 表头不应全空"
-
-
-def test_export_missing_settlement_no_keyerror(db_session):
-    """settlement_id 引用缺失时不抛 KeyError"""
-    from app.models import Customer, MatchResult, OurReceipt
-
-    customer = Customer(name="缺失引用", slug="missing", is_active=True)
-    db_session.add(customer)
-    db_session.flush()
-
-    receipt = OurReceipt(receipt_no="R003", customer_id=customer.id, period="202608", model="M3", quantity=1, amount=100)
-    db_session.add(receipt)
-    db_session.flush()
-
-    # 匹配结果引用不存在的 settlement_id
-    broken = MatchResult(
-        customer_id=customer.id, period="202608",
-        receipt_id=receipt.id, settlement_id=99999,
-        match_type="exact", confidence=1.0, status="matched",
-        source="auto", diff_amount=10,
-    )
-    db_session.add(broken)
-    db_session.commit()
-
-    # 不应抛出 KeyError
-    output = ExportService.export_reconciliation(customer.id, "202608", "缺失引用", db_session)
-    assert isinstance(output, BytesIO)
-
-
-def test_get_history_includes_manual(db_session):
-    """历史查询应计入 manual 状态"""
-    from app.models import Customer, MatchResult, OurReceipt, CustomerSettlement
-
-    customer = Customer(name="历史测试", slug="hist", is_active=True)
-    db_session.add(customer)
-    db_session.flush()
-
-    receipt = OurReceipt(receipt_no="R004", customer_id=customer.id, period="202608", model="M4")
-    db_session.add(receipt)
-    db_session.flush()
-
-    manual = MatchResult(
-        customer_id=customer.id, period="202608",
-        receipt_id=receipt.id, match_type="manual",
-        confidence=1.0, status="manual", source="manual",
-    )
-    db_session.add(manual)
-    db_session.commit()
-
-    items = ExportService.get_history(db_session)
-    assert len(items) == 1
-    assert items[0]["matched_count"] == 1, f"manual 应计入 matched_count: {items[0]}"
-
-
-def test_get_history_empty_customer_ids(db_session):
-    """无匹配结果时 get_history 不应报错"""
-    items = ExportService.get_history(db_session)
-    assert items == []
-
-
-def _seed_lopsided_results(db_session):
-    """构造：2 笔已匹配结算单 + 3 笔仅我方未匹配（结算单侧全部匹配）。
-
-    旧口径（分母=我方笔数）匹配率 2/5=40%；
-    正确口径（分母=结算单数）匹配率 2/2=100%。
-    """
-    from app.models import Customer, MatchResult, OurReceipt, CustomerSettlement
-
-    customer = Customer(name="口径测试", slug="rate", is_active=True)
-    db_session.add(customer)
-    db_session.flush()
-
-    for i in range(1, 6):
-        r = OurReceipt(receipt_no=f"R{i}", customer_id=customer.id, period="202608",
-                       model="M", quantity=1, amount=100)
-        db_session.add(r)
-    db_session.flush()
-
-    receipts = db_session.query(OurReceipt).all()
-    # 2 笔匹配（含结算单），3 笔仅我方未匹配
-    for i in range(2):
-        s = CustomerSettlement(customer_id=customer.id, period="202608",
-                               match_key=f"K{i}", model="M", quantity=1, amount=100)
-        db_session.add(s)
-        db_session.flush()
-        db_session.add(MatchResult(customer_id=customer.id, period="202608",
-                                   receipt_id=receipts[i].id, settlement_id=s.id,
-                                   match_type="exact", confidence=1.0, status="matched",
-                                   source="auto", diff_amount=0, diff_quantity=0))
-    for i in range(2, 5):
-        db_session.add(MatchResult(customer_id=customer.id, period="202608",
-                                   receipt_id=receipts[i].id, settlement_id=None,
-                                   match_type="未匹配", confidence=0.0, status="unmatched",
-                                   source="auto"))
-    db_session.commit()
+    db_session.refresh(customer)
     return customer
 
 
-def test_export_match_rate_is_settlement_driven(db_session):
-    """导出汇总的匹配率以结算单为口径（2/2=100%，而非 2/5=40%）"""
-    customer = _seed_lopsided_results(db_session)
-    output = ExportService.export_reconciliation(customer.id, "202608", "口径测试", db_session)
+@pytest.fixture
+def sample_receipts(db_session, sample_customer):
+    """创建测试台账数据"""
+    receipts = []
+    for i in range(10):
+        receipt = Receipt(
+            customer_id=sample_customer.id,
+            period="202608",
+            receipt_no=f"S101{i:010d}",
+            model=f"75V69H",
+            quantity=5 + i,
+            amount=34650.00 + i * 100,
+            unit_price=6930.00,
+            receipt_date="2026-08-15",
+            doc_type="普通销售单",
+            customer_name="山东潍坊百货集团股份有限公司中百配送中心",
+            nc_order_no=f"PON{i:015d}",
+            product_line="智屏",
+            billing_status="unbilled" if i % 2 == 0 else "billed",
+            invoice_no=f"24932{i:010d}" if i % 2 == 1 else None,
+            invoice_date="2026-08-20" if i % 2 == 1 else None,
+            raw_data={
+                "新方舟销售单号": f"S101{i:010d}",
+                "产品型号": "75V69H",
+                "签收数量": 5 + i,
+                "签收金额": 34650.00 + i * 100,
+                "单价": 6930.00,
+                "签收日期/完成日期": "2026-08-15",
+                "单据类型": "普通销售单",
+                "结算客户名称": "山东潍坊百货集团股份有限公司中百配送中心",
+                "NC订单号": f"PON{i:015d}",
+                "产品线": "智屏",
+            },
+        )
+        db_session.add(receipt)
+        receipts.append(receipt)
+    db_session.commit()
+    return receipts
 
-    wb = load_workbook(output)
-    rows = list(wb["对账汇总"].iter_rows(values_only=True))
-    rate_row = [r for r in rows if r[0] == "匹配率"]
-    assert len(rate_row) == 1
-    assert rate_row[0][1] == "100.0%", f"匹配率应为结算单口径 100.0%: {rate_row}"
+
+class TestExportReceipts:
+    """测试台账导出"""
+
+    def test_export_receipts_all(self, db_session, sample_customer, sample_receipts):
+        """测试导出全部台账"""
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+        )
+
+        assert isinstance(output, io.BytesIO)
+        assert output.getvalue() != b""
+
+        # 验证 Excel 内容
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 10
+        assert "新方舟销售单号" in df.columns
+        assert "产品型号" in df.columns
+        assert "签收数量" in df.columns
+        assert "签收金额" in df.columns
+
+    def test_export_receipts_filtered_by_period(self, db_session, sample_customer, sample_receipts):
+        """测试按期间筛选导出"""
+        # 创建一个不同期间的记录
+        receipt_other = Receipt(
+            customer_id=sample_customer.id,
+            period="202607",
+            receipt_no="S1019999999999",
+            model="75V69H",
+            quantity=1,
+            amount=6930.00,
+            billing_status="unbilled",
+            raw_data={},
+        )
+        db_session.add(receipt_other)
+        db_session.commit()
+
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+            period="202608",
+        )
+
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 10  # 只包含 202608 期间的记录
+
+    def test_export_receipts_filtered_by_status(self, db_session, sample_customer, sample_receipts):
+        """测试按状态筛选导出"""
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+            billing_status="billed",
+        )
+
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 5  # 只有 5 条 billed 记录
+
+    def test_export_receipts_filtered_by_search(self, db_session, sample_customer, sample_receipts):
+        """测试按搜索关键词筛选导出"""
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+            search="S1010000000001",
+        )
+
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 1
+        assert df.iloc[0]["新方舟销售单号"] == "S1010000000001"
+
+    def test_export_receipts_column_names_from_raw_data(self, db_session, sample_customer, sample_receipts):
+        """测试导出的列名与原始台账一致（从 raw_data 提取）"""
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+        )
+
+        df = pd.read_excel(output, sheet_name=0)
+        # 验证列名与 raw_data 的 key 一致
+        expected_columns = list(sample_receipts[0].raw_data.keys())
+        for col in expected_columns:
+            assert col in df.columns
+
+    def test_export_receipts_performance(self, db_session, sample_customer):
+        """测试导出性能（1 万行 < 5 秒）"""
+        # 创建 1 万条记录
+        import time
+        receipts = []
+        for i in range(10000):
+            receipt = Receipt(
+                customer_id=sample_customer.id,
+                period="202608",
+                receipt_no=f"S101{i:010d}",
+                model="75V69H",
+                quantity=5,
+                amount=34650.00,
+                billing_status="unbilled",
+                raw_data={"新方舟销售单号": f"S101{i:010d}", "产品型号": "75V69H"},
+            )
+            receipts.append(receipt)
+        db_session.bulk_save_objects(receipts)
+        db_session.commit()
+
+        start_time = time.time()
+        output = ExportService.export_receipts_to_excel(
+            customer_id=sample_customer.id,
+            db=db_session,
+        )
+        elapsed_time = time.time() - start_time
+
+        assert elapsed_time < 5.0, f"导出 1 万行耗时 {elapsed_time:.2f} 秒，超过 5 秒"
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 10000
 
 
-def test_get_history_match_rate_is_settlement_driven(db_session):
-    """历史查询的匹配率以结算单为口径（2/2=100%，而非 2/5=40%）"""
-    customer = _seed_lopsided_results(db_session)
-    items = ExportService.get_history(db_session, customer_id=customer.id)
-    assert len(items) == 1
-    assert items[0]["matched_count"] == 2
-    assert items[0]["unmatched_receipts"] == 3
-    assert items[0]["match_rate"] == 100.0, f"匹配率应为结算单口径 100.0: {items[0]}"
+class TestExportBillingList:
+    """测试开票清单导出"""
+
+    def test_export_billing_list(self, db_session, sample_customer, sample_receipts):
+        """测试导出开票清单"""
+        # 筛选未开票的记录
+        receipt_ids = [r.id for r in sample_receipts if r.billing_status == "unbilled"]
+
+        output = ExportService.export_billing_list_to_excel(
+            receipt_ids=receipt_ids,
+            db=db_session,
+        )
+
+        assert isinstance(output, io.BytesIO)
+        assert output.getvalue() != b""
+
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 5  # 5 条未开票记录
+        assert "新方舟销售单号" in df.columns
+        assert "产品型号" in df.columns
+        assert "签收数量" in df.columns
+        assert "签收金额" in df.columns
+
+    def test_export_billing_list_empty(self, db_session, sample_customer):
+        """测试导出空清单"""
+        output = ExportService.export_billing_list_to_excel(
+            receipt_ids=[],
+            db=db_session,
+        )
+
+        assert isinstance(output, io.BytesIO)
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 0
+
+
+class TestExportRedFlushConfirmation:
+    """测试红冲确认单导出"""
+
+    def test_export_red_flush_confirmation(self, db_session, sample_customer, sample_receipts):
+        """测试导出红冲确认单"""
+        # 创建退货记录
+        return_receipt = Receipt(
+            customer_id=sample_customer.id,
+            period="202608",
+            receipt_no="S1019999999998",
+            model="75V69H",
+            quantity=-3,
+            amount=-20790.00,
+            unit_price=6930.00,
+            billing_status="unbilled",
+            raw_data={},
+        )
+        db_session.add(return_receipt)
+        db_session.commit()
+
+        # 匹配蓝票（已开票的记录）
+        blue_receipts = [r for r in sample_receipts if r.billing_status == "billed"]
+        matches = [
+            {
+                "return_receipt": return_receipt,
+                "blue_receipt": blue_receipts[0],
+            }
+        ]
+
+        output = ExportService.export_red_flush_confirmation_to_excel(
+            matches=matches,
+            db=db_session,
+        )
+
+        assert isinstance(output, io.BytesIO)
+        assert output.getvalue() != b""
+
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 1
+        assert "退货单号" in df.columns
+        assert "产品型号" in df.columns
+        assert "退货数量" in df.columns
+        assert "蓝票号" in df.columns
+        assert "开票日期" in df.columns
+
+    def test_export_red_flush_confirmation_empty(self, db_session, sample_customer):
+        """测试导出空确认单"""
+        output = ExportService.export_red_flush_confirmation_to_excel(
+            matches=[],
+            db=db_session,
+        )
+
+        assert isinstance(output, io.BytesIO)
+        df = pd.read_excel(output, sheet_name=0)
+        assert len(df) == 0

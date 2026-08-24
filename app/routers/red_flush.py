@@ -58,16 +58,29 @@ def batch_find_blue_invoices(
     return result
 
 
-@router.post("/generate", response_model=SuccessResponse)
+@router.post("/generate")
 def generate_confirmation(
     return_receipt_ids: list[int],
     db: Session = Depends(get_db),
 ):
     """生成确认单（导出 Excel 给税务）"""
+    from fastapi.responses import Response
+    from urllib.parse import quote
+
     try:
-        output = RedFlushService.generate_confirmation(return_receipt_ids, db)
-        # TODO: 实现 Excel 导出后，返回文件下载
-        return SuccessResponse(message="生成功能待实现")
+        output_bytes = RedFlushService.generate_confirmation(return_receipt_ids, db)
+
+        # 生成文件名
+        filename = f"红冲确认单_{len(return_receipt_ids)}条.xlsx"
+        encoded_filename = quote(filename)
+
+        return Response(
+            content=output_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            },
+        )
     except Exception as e:
         return ErrorResponse(status="error", message=str(e))
 

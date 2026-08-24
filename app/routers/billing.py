@@ -28,16 +28,29 @@ def get_pending_billing(
     return {"items": items, "total": len(items)}
 
 
-@router.post("/generate", response_model=SuccessResponse)
+@router.post("/generate")
 def generate_billing_list(
     request: GenerateBillingRequest,
     db: Session = Depends(get_db),
 ):
     """生成开票清单（导出 Excel）"""
+    from fastapi.responses import Response
+    from urllib.parse import quote
+
     try:
-        output = BillingService.generate_billing_list(request.receipt_ids, db)
-        # TODO: 实现 Excel 导出后，返回文件下载
-        return SuccessResponse(message="生成功能待实现")
+        output_bytes = BillingService.generate_billing_list(request.receipt_ids, db)
+
+        # 生成文件名
+        filename = f"开票清单_{len(request.receipt_ids)}条.xlsx"
+        encoded_filename = quote(filename)
+
+        return Response(
+            content=output_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            },
+        )
     except Exception as e:
         return ErrorResponse(status="error", message=str(e))
 

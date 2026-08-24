@@ -46,12 +46,15 @@ class BillingService:
         """
         生成开票清单（导出 Excel）
 
-        TODO: 实现 Excel 导出逻辑
+        调用 ExportService.export_billing_list_to_excel
         """
-        receipts = db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).all()
+        from app.services.export_service import ExportService
 
-        # 这里先返回空字节，后续实现 Excel 导出
-        return b""
+        output = ExportService.export_billing_list_to_excel(
+            receipt_ids=receipt_ids,
+            db=db,
+        )
+        return output.getvalue()
 
     @staticmethod
     def import_billed_list(

@@ -123,13 +123,30 @@ class RedFlushService:
         """
         生成确认单（导出 Excel 给税务）
 
-        TODO: 实现 Excel 导出逻辑
+        调用 ExportService.export_red_flush_confirmation_to_excel
         """
+        from app.services.export_service import ExportService
+
         # 先批量查找蓝票
         result = RedFlushService.batch_find_blue_invoices(return_receipt_ids, db)
 
-        # 这里先返回空字节，后续实现 Excel 导出
-        return b""
+        # 构建 matches 格式
+        matches = []
+        for item in result["results"]:
+            return_receipt = db.query(Receipt).filter(Receipt.id == item["return_receipt_id"]).first()
+            blue_receipt = db.query(Receipt).filter(Receipt.id == item["blue_receipt_id"]).first() if item["blue_receipt_id"] else None
+
+            if return_receipt:
+                matches.append({
+                    "return_receipt": return_receipt,
+                    "blue_receipt": blue_receipt,
+                })
+
+        output = ExportService.export_red_flush_confirmation_to_excel(
+            matches=matches,
+            db=db,
+        )
+        return output.getvalue()
 
     @staticmethod
     def record_red_notice(

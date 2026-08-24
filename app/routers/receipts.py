@@ -89,13 +89,33 @@ def split_receipt(
 def export_receipts(
     customer_id: int = Query(..., description="客户ID"),
     period: Optional[str] = Query(None, description="对账期间 YYYYMM"),
+    billing_status: Optional[str] = Query(None, description="开票状态"),
+    search: Optional[str] = Query(None, description="搜索关键词"),
     db: Session = Depends(get_db),
 ):
     """导出台账为 Excel"""
-    output = ReceiptService.export_receipts(customer_id, period, db)
+    from fastapi.responses import Response
+    from urllib.parse import quote
 
-    # TODO: 实现 Excel 导出后，返回文件下载
-    return {"status": "success", "message": "导出功能待实现"}
+    output_bytes = ReceiptService.export_receipts(
+        customer_id=customer_id,
+        period=period,
+        db=db,
+        billing_status=billing_status,
+        search=search,
+    )
+
+    # 生成文件名
+    filename = f"台账_{customer_id}_{period or '全部'}.xlsx"
+    encoded_filename = quote(filename)
+
+    return Response(
+        content=output_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
+    )
 
 
 @router.get("/pending-pool")

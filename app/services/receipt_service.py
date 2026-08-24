@@ -211,14 +211,24 @@ class ReceiptService:
         customer_id: int,
         period: Optional[str],
         db: Session,
+        billing_status: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> bytes:
         """
         导出台账为 Excel
 
-        TODO: 实现 Excel 导出逻辑
+        调用 ExportService.export_receipts_to_excel
         """
-        # 这里先返回空字节，后续实现
-        return b""
+        from app.services.export_service import ExportService
+
+        output = ExportService.export_receipts_to_excel(
+            customer_id=customer_id,
+            db=db,
+            period=period,
+            billing_status=billing_status,
+            search=search,
+        )
+        return output.getvalue()
 
     @staticmethod
     def get_pending_pool(
