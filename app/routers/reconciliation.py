@@ -7,9 +7,10 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Customer
+from app.models import Customer, Receipt
 from app.schemas import (
     HistoryResponse,
+    MarkDiffRequest,
     MatchSummaryResponse,
     ReconciliationRunResponse,
     RunReconciliationRequest,
@@ -40,6 +41,26 @@ def upload_statement(
         return result
     except ValueError as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/mark-diff")
+def mark_diff(
+    request: MarkDiffRequest,
+    db: Session = Depends(get_db),
+):
+    """标记差异（时间差/真差异）→ 挂入未决池"""
+    receipt = db.query(Receipt).filter(Receipt.id == request.receipt_id).first()
+    if not receipt:
+        return {"status": "error", "message": f"台账记录不存在: {request.receipt_id}"}
+
+    from datetime import datetime
+    receipt.diff_type = request.diff_type
+    receipt.diff_note = request.diff_note
+    receipt.resolved_period = None  # 挂入未决池
+    receipt.updated_at = datetime.now()
+    db.commit()
+
+    return {"status": "success", "message": "已标记差异，挂入未决池"}
 
 
 @router.post("/run", response_model=ReconciliationRunResponse)

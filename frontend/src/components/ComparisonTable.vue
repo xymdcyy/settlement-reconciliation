@@ -154,7 +154,7 @@
       </el-table-column>
 
       <!-- 操作列 -->
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="row.status === 'unmatched'"
@@ -170,8 +170,15 @@
             @click="$emit('unmatch', row)"
           >解除</el-button>
           <el-button
-            v-if="row.status !== 'ignored'"
+            v-if="row.status === 'unmatched' && row.receipt"
             type="warning"
+            size="small"
+            plain
+            @click="$emit('mark-diff', row)"
+          >标记差异</el-button>
+          <el-button
+            v-if="row.status !== 'ignored'"
+            type="info"
             size="small"
             plain
             @click="$emit('ignore', row)"
@@ -192,7 +199,7 @@ const props = defineProps({
   total: { type: Number, default: 0 },
 })
 
-defineEmits(['manual-match', 'unmatch', 'ignore'])
+defineEmits(['manual-match', 'unmatch', 'ignore', 'mark-diff'])
 
 const hasData = computed(() => props.items.length > 0)
 

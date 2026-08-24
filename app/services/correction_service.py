@@ -32,7 +32,7 @@ class CorrectionService:
         old_settlement_match = db.query(MatchResult).filter(
             MatchResult.customer_id == customer_id,
             MatchResult.period == period,
-            MatchResult.settlement_id == settlement_id,
+            MatchResult.statement_id == settlement_id,
         ).first()
 
         before_data = {
@@ -53,7 +53,7 @@ class CorrectionService:
             customer_id=customer_id,
             period=period,
             receipt_id=receipt_id,
-            settlement_id=settlement_id,
+            statement_id=settlement_id,
             match_type="人工匹配",
             confidence=1.0,
             status="manual",
@@ -102,7 +102,7 @@ class CorrectionService:
         before_data = {
             "status": match.status,
             "receipt_id": match.receipt_id,
-            "settlement_id": match.settlement_id,
+            "settlement_id": match.statement_id,
         }
 
         # 分别创建两条未匹配记录
@@ -111,7 +111,7 @@ class CorrectionService:
                 customer_id=customer_id,
                 period=period,
                 receipt_id=match.receipt_id,
-                settlement_id=None,
+                statement_id=None,
                 match_type="未匹配",
                 confidence=0.0,
                 status="unmatched",
@@ -121,11 +121,11 @@ class CorrectionService:
             )
             db.add(r_unmatch)
 
-        if match.settlement_id:
+        if match.statement_id:
             s_unmatch = MatchResult(
                 customer_id=customer_id,
                 period=period,
-                settlement_id=match.settlement_id,
+                statement_id=match.statement_id,
                 receipt_id=None,
                 match_type="未匹配",
                 confidence=0.0,

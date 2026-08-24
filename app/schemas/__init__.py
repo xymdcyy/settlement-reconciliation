@@ -261,27 +261,39 @@ class ResolvePendingRequest(BaseModel):
 
 class ManualMatchRequest(BaseModel):
     """人工匹配请求"""
+    customer_id: int
+    period: str
     receipt_id: int
     settlement_id: int
-    remark: Optional[str] = None
+    operator_id: Optional[int] = None
+    reason: Optional[str] = None
 
 
 class UnmatchRequest(BaseModel):
     """解除匹配请求"""
+    customer_id: int
+    period: str
     result_id: int
+    operator_id: Optional[int] = None
     reason: Optional[str] = None
 
 
 class IgnoreRequest(BaseModel):
     """忽略请求"""
-    settlement_id: int
-    reason: Optional[str] = None
+    customer_id: int
+    period: str
+    result_id: int
+    reason: str = "忽略"
+    operator_id: Optional[int] = None
 
 
 class NoteRequest(BaseModel):
     """备注请求"""
+    customer_id: int
+    period: str
     result_id: int
-    note: str
+    remark: str
+    operator_id: Optional[int] = None
 
 
 class CorrectionResponse(BaseModel):
