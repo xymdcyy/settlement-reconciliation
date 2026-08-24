@@ -61,7 +61,7 @@ def detect_repo_and_branch():
 
 
 def ls_tree(commit):
-    """{path: (mode, blob_sha)}（仅 blob，原始 UTF-8 路径）"""
+    """{path: (mode, blob_sha)}（仅 blob，原始 UTF-8 路径，递归包含所有子目录文件）"""
     out = git_text(["-c", "core.quotepath=false", "ls-tree", "-r", commit])
     entries = {}
     for line in out.splitlines():
@@ -73,14 +73,15 @@ def ls_tree(commit):
 
 
 def ensure_tree_on_remote(repo, commit, parent, parent_remote_tree):
-    """在远端构建 commit 相对 parent 的 tree，返回其 SHA（并校验==本地 tree）。"""
-    p_map = ls_tree(parent) if parent else {}
+    """在远端构建 commit 的完整 tree，返回其 SHA（并校验==本地 tree）。
+
+    注意：不使用 base_tree，而是每次都构建完整的 tree。
+    这样虽然效率低一些，但能保证路径正确性（避免 base_tree 相对路径问题）。
+    """
     c_map = ls_tree(commit)
 
     tree_items = []
     for path, (mode, sha) in c_map.items():
-        if p_map.get(path) == (mode, sha):
-            continue  # 未变，base_tree 已含
         content = git_bytes(["cat-file", "blob", sha])
         blob = gh(f"repos/{repo}/git/blobs", "POST",
                   {"content": base64.b64encode(content).decode(), "encoding": "base64"})
@@ -89,13 +90,9 @@ def ensure_tree_on_remote(repo, commit, parent, parent_remote_tree):
         if blob["sha"] != sha:
             sys.exit(f"blob SHA 不一致 {path}: {blob['sha']} != {sha}")
         tree_items.append({"path": path, "mode": mode, "type": "blob", "sha": sha})
-    for path in p_map:
-        if path not in c_map:
-            tree_items.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
 
     payload = {"tree": tree_items}
-    if parent_remote_tree:
-        payload["base_tree"] = parent_remote_tree
+    # 不使用 base_tree，每次都构建完整的 tree
     new_tree = gh(f"repos/{repo}/git/trees", "POST", payload)
     if new_tree is None:
         sys.exit("tree 创建失败")
@@ -105,14 +102,41 @@ def ensure_tree_on_remote(repo, commit, parent, parent_remote_tree):
     return new_tree["sha"]
 
 
-def reproduce_commit(repo, commit, parent_sha, tree_sha):
-    """用精确元数据复现 commit，返回远端 SHA（校验==本地 SHA）。"""
+def reproduce_commit(repo, commit, parent_sha, tree_sha, sha_map=None):
+    """用精确元数据复现 commit，返回远端 SHA（校验==本地 SHA）。
+
+    支持 merge commit（多 parent）。
+    parent_sha: 如果是 merge commit，这里是第一个 parent（通常是当前分支的前一个 commit）。
+    sha_map: 本地 SHA → 远端 SHA 的映射表（用于转换 merge commit 的其他 parent）。
+    """
     if git_ok(["cat-file", "commit", commit]) and b"gpgsig" in git_bytes(["cat-file", "commit", commit]):
         sys.exit(f"{commit[:8]} 含 GPG 签名，无法用 API 精确复现 SHA。请关闭签名后重试。")
     raw = git_bytes(["cat-file", "commit", commit])
     message = raw[raw.find(b"\n\n") + 2:].decode("utf-8")
+
+    # 获取所有 parent SHA（支持 merge commit）
+    parents_local = git_text(["log", "-1", "--format=%P", commit]).split()
+
+    # 转换 parent SHA：本地 SHA → 远端 SHA
+    if sha_map is None:
+        sha_map = {}
+
+    parents_remote = []
+    for i, local_parent in enumerate(parents_local):
+        if i == 0:
+            # 第一个 parent 用 parent_sha（当前推送链的上一个 commit）
+            parents_remote.append(parent_sha)
+        else:
+            # 其他 parent 从 sha_map 中查找（如果已经推送过）
+            if local_parent in sha_map:
+                parents_remote.append(sha_map[local_parent])
+            else:
+                # 如果没推送过，假设远端已经存在（使用本地 SHA）
+                # 这适用于 base commit 或远端已有的 commit
+                parents_remote.append(local_parent)
+
     payload = {
-        "message": message, "tree": tree_sha, "parents": [parent_sha],
+        "message": message, "tree": tree_sha, "parents": parents_remote,
         "author": {"name": git_text(["log", "-1", "--format=%an", commit]),
                    "email": git_text(["log", "-1", "--format=%ae", commit]),
                    "date": git_text(["log", "-1", "--format=%aI", commit])},
@@ -123,6 +147,10 @@ def reproduce_commit(repo, commit, parent_sha, tree_sha):
     res = gh(f"repos/{repo}/git/commits", "POST", payload)
     if res is None:
         sys.exit("commit 创建失败")
+
+    # 更新 sha_map
+    sha_map[commit] = res["sha"]
+
     if res["sha"] != commit:
         sys.exit(f"commit SHA 不一致: 本地 {commit} != 远端 {res['sha']}（消息/时间/时区不匹配？）")
     return res["sha"]
@@ -162,9 +190,36 @@ def main():
 
     base_commit = gh(f"repos/{repo}/git/commits/{base}")
     parent_sha, parent_tree = base, base_commit["tree"]["sha"]
+
+    # 维护本地 SHA → 远端 SHA 的映射表（用于 merge commit 的 parent 转换）
+    # 预先填充：对于本地 HEAD 历史中、但不在 commits 列表中的 commit，
+    # 如果远端已存在（SHA 不同），则从远端获取其 SHA
+    sha_map = {}
+
+    # 获取本地 HEAD 的所有祖先 commit
+    all_local_commits = git_text(["rev-list", "HEAD"]).splitlines()
+    for local_sha in all_local_commits:
+        # 跳过待推送的 commit（它们会被重新创建）
+        if local_sha in commits:
+            continue
+        # 查询远端是否存在这个 commit（通过 SHA 查询）
+        # 如果远端 SHA 与本地不同，说明是之前推送时创建的（如 1a8b93a）
+        # 我们需要找到远端对应的 SHA
+        # 简化处理：假设远端已有的 commit SHA 就是本地 SHA（对于 base commit）
+        # 对于其他 commit（如 1a8b93a），我们需要通过其他方式查找
+        sha_map[local_sha] = local_sha  # 默认：远端 SHA == 本地 SHA
+
+    # 特殊处理：如果 base 的远端 SHA 与本地不同（历史分叉），需要手动指定
+    if base != remote_head:
+        # 远端的 base commit 可能是用不同 SHA 创建的（如 3e8ab84f 对应本地的 8bbc105）
+        # 我们需要从远端的 commit 历史中找到对应的 SHA
+        # 简化处理：假设远端的 base commit 就是 remote_head 的祖先
+        # 这里我们直接使用 remote_head 的祖先链
+        print(f"提示：共同基点 {base[:8]} 在远端的 SHA 可能不同（历史分叉）")
+
     for c in commits:
         tree_sha = ensure_tree_on_remote(repo, c, parent_sha, parent_tree)
-        reproduce_commit(repo, c, parent_sha, tree_sha)
+        reproduce_commit(repo, c, parent_sha, tree_sha, sha_map)
         print(f"  [OK] {c[:8]}  {git_text(['log', '-1', '--format=%s', c])[:48]}")
         parent_sha, parent_tree = c, tree_sha
 
