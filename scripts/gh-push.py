@@ -25,18 +25,25 @@ import subprocess
 import sys
 
 
-def gh(path, method="GET", data=None, quiet=False):
-    cmd = ["gh", "api", "-X", method, path]
-    if data is not None:
-        cmd += ["--input", "-"]
-        r = subprocess.run(cmd, input=json.dumps(data), capture_output=True, text=True, encoding="utf-8")
-    else:
-        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-    if r.returncode != 0:
-        if not quiet:
-            print(f"[gh api 失败] {method} {path}\n{r.stderr.strip()}", file=sys.stderr)
-        return None
-    return json.loads(r.stdout) if r.stdout.strip() else {}
+def gh(path, method="GET", data=None, quiet=False, retries=4):
+    """调用 gh api，失败自动重试（网络抖动场景）。"""
+    for attempt in range(retries):
+        cmd = ["gh", "api", "-X", method, path]
+        if data is not None:
+            cmd += ["--input", "-"]
+            r = subprocess.run(cmd, input=json.dumps(data), capture_output=True, text=True, encoding="utf-8")
+        else:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        if r.returncode == 0:
+            return json.loads(r.stdout) if r.stdout.strip() else {}
+        if attempt < retries - 1:
+            import time
+            wait = 2 * (attempt + 1)
+            print(f"  [重试 {attempt+1}/{retries-1}] {method} {path} 失败，{wait}s 后重试…", file=sys.stderr)
+            time.sleep(wait)
+    if not quiet:
+        print(f"[gh api 失败] {method} {path}\n{r.stderr.strip()}", file=sys.stderr)
+    return None
 
 
 def git_text(args):
@@ -167,7 +174,7 @@ def main():
     remote_head = ref["object"]["sha"]
     print(f"远端 HEAD: {remote_head[:8]}")
     if remote_head == local_head:
-        print("✅ 已一致，无需推送。")
+        print("[OK] 已一致，无需推送。")
         return
 
     # 确定 base（复现起点）与是否快进
@@ -183,7 +190,7 @@ def main():
         if base is None:
             sys.exit("找不到本地与远端的共同提交，无法安全推送。")
         fast_forward = False
-        print(f"⚠️  历史分叉，共同基点: {base[:8]}（将 force 更新，仅覆盖自己的历史）")
+        print(f"[!] 历史分叉，共同基点: {base[:8]}（将 force 更新，仅覆盖自己的历史）")
 
     commits = git_text(["rev-list", "--reverse", f"{base}..HEAD"]).splitlines()
     print(f"待推送 {len(commits)} 个提交，逐一精确复现 SHA…")
