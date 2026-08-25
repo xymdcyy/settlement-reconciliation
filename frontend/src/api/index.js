@@ -74,6 +74,7 @@ export const resolvePending = (id, resolvedPeriod) => api.put(`/receipts/pending
 // ========== 核对相关 ==========
 
 export const runReconciliation = (data) => api.post('/reconciliation/run', data)
+export const getReconciliationStatus = (params) => api.get('/reconciliation/status', { params })
 export const getReconciliationResults = (params) => api.get('/reconciliation/results', { params })
 export const markDiff = (data) => api.post('/reconciliation/mark-diff', data)
 

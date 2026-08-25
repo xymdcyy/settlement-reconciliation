@@ -89,6 +89,7 @@
         @unmatch="onUnmatch"
         @ignore="onIgnore"
         @mark-diff="onMarkDiff"
+        @drag-match="onDragMatch"
       />
 
       <!-- 分页 -->
@@ -424,6 +425,27 @@ const confirmManualMatch = async () => {
     if (result.success !== false) {
       ElMessage.success('手动匹配成功')
       matchDialogVisible.value = false
+      onPeriodChange()
+    } else {
+      ElMessage.error(result.message || '匹配失败')
+    }
+  } catch (error) {
+    ElMessage.error('匹配失败: ' + error.message)
+  }
+}
+
+// 拖拽匹配（Ticket 06）：drag-match 事件带归一化后的 receiptRow + settlementRow
+const onDragMatch = async ({ receiptRow, settlementRow }) => {
+  try {
+    const result = await postJson('/corrections/manual-match', {
+      customer_id: props.customerId,
+      period: period.value,
+      receipt_id: receiptRow.receipt.id,
+      settlement_id: settlementRow.settlement.id,
+      reason: '拖拽匹配',
+    })
+    if (result.success !== false) {
+      ElMessage.success('拖拽匹配成功')
       onPeriodChange()
     } else {
       ElMessage.error(result.message || '匹配失败')

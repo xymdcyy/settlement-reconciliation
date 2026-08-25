@@ -154,8 +154,35 @@
       </el-table-column>
 
       <!-- 操作列 -->
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
+          <!-- 拖拽手柄：仅未匹配行可拖 -->
+          <el-tooltip
+            v-if="row.status === 'unmatched'"
+            content="拖到我方/客户记录上完成配对"
+            placement="top"
+          >
+            <span
+              class="drag-handle"
+              draggable="true"
+              :class="{ 'is-dragging': dragSource && dragSource.id === row.id }"
+              @dragstart="onDragStart($event, row)"
+              @dragend="onDragEnd"
+            >⠿</span>
+          </el-tooltip>
+
+          <el-button
+            v-if="row.status === 'unmatched' && canDropTarget(row)"
+            size="small"
+            type="success"
+            plain
+            class="drop-target"
+            :class="{ 'is-over': dragOverId === row.id }"
+            @dragover.prevent="onDragOver($event, row)"
+            @dragleave="onDragLeave"
+            @drop.prevent="onDrop($event, row)"
+          >放置配对</el-button>
+
           <el-button
             v-if="row.status === 'unmatched'"
             type="primary"
@@ -199,11 +226,60 @@ const props = defineProps({
   total: { type: Number, default: 0 },
 })
 
-defineEmits(['manual-match', 'unmatch', 'ignore', 'mark-diff'])
+const emit = defineEmits(['manual-match', 'unmatch', 'ignore', 'mark-diff', 'drag-match'])
 
 const hasData = computed(() => props.items.length > 0)
 
-import { computed } from 'vue'
+// ============================================================
+// 拖拽匹配（Ticket 06）
+// ============================================================
+const dragSource = ref(null)
+const dragOverId = ref(null)
+
+// 判断某行是否能作为 drop 目标：
+// 只有当拖拽源与目标是「互补」时才可以（我方未匹配 ↔ 客户未匹配）
+function canDropTarget(row) {
+  if (!dragSource.value || row.status !== 'unmatched') return false
+  if (dragSource.value.id === row.id) return false
+  const src = dragSource.value
+  const srcHasReceipt = !!src.receipt
+  const dstHasReceipt = !!row.receipt
+  // 一侧有 receipt（我方未匹配）、另一侧有 settlement（客户未匹配）
+  return srcHasReceipt !== dstHasReceipt
+}
+
+function onDragStart(event, row) {
+  dragSource.value = row
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(row.id))
+}
+
+function onDragEnd() {
+  dragSource.value = null
+  dragOverId.value = null
+}
+
+function onDragOver(event, row) {
+  dragOverId.value = row.id
+  event.dataTransfer.dropEffect = 'move'
+}
+
+function onDragLeave() {
+  dragOverId.value = null
+}
+
+function onDrop(event, row) {
+  const src = dragSource.value
+  dragOverId.value = null
+  dragSource.value = null
+  if (!src || !canDropTarget(row)) return
+  // 归一化：确保 receipt 侧在前、settlement 侧在后
+  const receiptRow = src.receipt ? src : row
+  const settlementRow = src.settlement ? src : row
+  emit('drag-match', { receiptRow, settlementRow })
+}
+
+import { computed, ref } from 'vue'
 
 function rowClassName({ row }) {
   if (row.status === 'matched') return 'row-matched'
@@ -267,6 +343,21 @@ function onExpand(row, expanded) {
 .diff-positive { color: #f56c6c; font-weight: 600; }
 .diff-negative { color: #67c23a; font-weight: 600; }
 .no-diff { color: #c0c4cc; }
+.drag-handle {
+  display: inline-block;
+  cursor: grab;
+  font-size: 16px;
+  color: #909399;
+  padding: 4px 8px;
+  margin-right: 4px;
+  user-select: none;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+.drag-handle:active { cursor: grabbing; }
+.drag-handle.is-dragging { opacity: 0.4; background: #ecf5ff; }
+.drop-target { margin-right: 4px; }
+.drop-target.is-over { border-color: #67c23a; color: #67c23a; background: #f0f9eb; }
 .table-footer {
   display: flex;
   justify-content: flex-end;
