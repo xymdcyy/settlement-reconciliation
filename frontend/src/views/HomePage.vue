@@ -6,7 +6,10 @@
       <template #header>
         <div class="flex justify-between items-center">
           <span>我负责的客户 ({{ customers.length }}个)</span>
-          <el-button type="primary" @click="$router.push('/admin')">系统管理</el-button>
+          <div>
+            <el-button type="primary" @click="$router.push('/migration')">数据迁移</el-button>
+            <el-button type="primary" plain @click="$router.push('/admin')">系统管理</el-button>
+          </div>
         </div>
       </template>
 

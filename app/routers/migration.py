@@ -2,6 +2,7 @@
 
 from typing import Optional
 
+import pandas as pd
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
@@ -63,17 +64,27 @@ def validate_migration(
         # 清洗数据
         receipts, warnings = MigrationService.clean_data(df, customer_id, db)
 
-        # TODO: 这里应该先做试导入（不提交），然后验证
-        # 现在先返回基本信息
+        # 计算金额（Excel 原始签收金额 vs 清洗后金额）
+        excel_total_amount = 0.0
+        if "签收金额" in df.columns:
+            excel_total_amount = float(pd.to_numeric(df["签收金额"], errors="coerce").sum())
+        imported_total_amount = sum(
+            float(r.get("amount", 0) or 0) for r in receipts
+        )
+
+        is_valid = abs(excel_total_amount - imported_total_amount) < 0.01
+        errors = [] if is_valid else [
+            f"金额不一致: Excel={excel_total_amount}, 导入={imported_total_amount}"
+        ]
 
         return MigrationValidateResponse(
-            is_valid=True,
+            is_valid=is_valid,
             total_rows=len(df),
             imported_rows=len(receipts),
-            excel_total_amount=0.0,  # TODO: 计算
-            imported_total_amount=0.0,  # TODO: 计算
+            excel_total_amount=excel_total_amount,
+            imported_total_amount=imported_total_amount,
             warnings=warnings,
-            errors=[],
+            errors=errors,
         )
     except Exception as e:
         return ErrorResponse(status="error", message=str(e))

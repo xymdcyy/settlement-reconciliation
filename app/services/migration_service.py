@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models import Customer, Receipt
+from app.services.migration_rule_engine import MigrationRuleEngine
 
 
 class MigrationService:
@@ -49,15 +50,30 @@ class MigrationService:
         df: pd.DataFrame,
         customer_id: int,
         db: Session,
+        rules_file: Optional[str] = None,
+        customer_slug: Optional[str] = None,
     ) -> list[dict]:
         """
         数据清洗
 
-        1. 识别手工区列和系统区列
-        2. 状态枚举值转换
-        3. 日期格式统一
-        4. 脏数据处理
+        优先用迁移规则引擎（YAML 列名映射/状态映射/特殊规则）；
+        无规则文件时回退到标准提取（系统区字段 + 硬编码状态解析）。
+
+        Args:
+            df: 原始 DataFrame（从 Excel 读取）
+            customer_id: 客户 ID
+            db: 数据库会话
+            rules_file: YAML 规则文件路径（可选）
+            customer_slug: 客户 slug（可选，按 scripts/migration/rules/{slug}.yaml 加载规则）
         """
+        # 加载规则（优先显式路径，其次按 slug）
+        rules = MigrationService._load_rules(db, customer_id, rules_file, customer_slug)
+
+        # 先应用规则引擎的列名映射/特殊规则/状态映射，得到标准化列
+        # （billing_status/invoice_no/invoice_date/split_note/remark/extra_fields）
+        if rules:
+            df = MigrationRuleEngine.apply_rules(df, rules)
+
         # 查找"新方舟销售单号"列的位置
         try:
             receipt_no_col_idx = df.columns.tolist().index("新方舟销售单号")
@@ -69,7 +85,7 @@ class MigrationService:
         # 系统区列（新方舟销售单号及之后）
         system_cols = df.columns[receipt_no_col_idx:].tolist()
 
-        # 获取客户扩展列配置
+        # 获取客户扩展列配置（规则未覆盖时的兜底）
         customer = db.query(Customer).filter(Customer.id == customer_id).first()
         extra_fields_config = customer.extra_fields_config if customer else []
 
@@ -78,7 +94,7 @@ class MigrationService:
 
         for idx, row in df.iterrows():
             try:
-                # 系统字段
+                # 系统字段（标准提取，与规则无关）
                 receipt_data = {
                     "receipt_no": str(row.get("新方舟销售单号", "")),
                     "model": str(row.get("产品型号", "")),
@@ -93,30 +109,41 @@ class MigrationService:
                     "raw_data": row.to_dict(),
                 }
 
-                # 开票状态（从手工区解析）
-                billing_status_raw = row.get("是否开票") or row.get("是否还需开票")
-                receipt_data["billing_status"] = MigrationService._parse_billing_status(billing_status_raw)
+                # 开票状态：规则引擎若已标准化（billing_status 列已存在且为标准枚举），直接取；
+                # 否则从手工区解析
+                if "billing_status" in df.columns and pd.notna(row.get("billing_status")):
+                    receipt_data["billing_status"] = str(row.get("billing_status"))
+                else:
+                    billing_status_raw = row.get("是否开票") or row.get("是否还需开票")
+                    receipt_data["billing_status"] = MigrationService._parse_billing_status(billing_status_raw)
 
-                # 发票信息
-                receipt_data["invoice_no"] = str(row.get("发票号")) if pd.notna(row.get("发票号")) else None
-                receipt_data["invoice_date"] = MigrationService._parse_date(row.get("开票日期"))
+                # 发票信息：规则引擎映射的列优先，兜底手工区原列名
+                invoice_no = row.get("invoice_no") if "invoice_no" in df.columns else row.get("发票号")
+                receipt_data["invoice_no"] = str(invoice_no) if pd.notna(invoice_no) else None
 
-                # 拆分
-                split_note = row.get("拆分")
+                invoice_date = row.get("invoice_date") if "invoice_date" in df.columns else row.get("开票日期")
+                receipt_data["invoice_date"] = MigrationService._parse_date(invoice_date)
+
+                # 拆分（规则映射的 split_note 优先）
+                split_note = row.get("split_note") if "split_note" in df.columns else row.get("拆分")
                 if pd.notna(split_note):
                     receipt_data["split_note"] = str(split_note)
                     if "已拆分" in str(split_note):
                         receipt_data["billing_status"] = "split"
 
-                # 备注
-                receipt_data["remark"] = str(row.get("备注")) if pd.notna(row.get("备注")) else None
+                # 备注（规则映射的 remark 优先）
+                remark = row.get("remark") if "remark" in df.columns else row.get("备注")
+                receipt_data["remark"] = str(remark) if pd.notna(remark) else None
 
-                # 扩展字段
+                # 扩展字段：规则引擎映射的 extra_fields 优先，兜底客户扩展列配置
                 extra_fields = {}
-                for config in extra_fields_config or []:
-                    field_name = config.get("name")
-                    if field_name in row and pd.notna(row[field_name]):
-                        extra_fields[field_name] = row[field_name]
+                if "extra_fields" in df.columns and pd.notna(row.get("extra_fields")):
+                    extra_fields = dict(row["extra_fields"]) if isinstance(row["extra_fields"], dict) else {}
+                else:
+                    for config in extra_fields_config or []:
+                        field_name = config.get("name")
+                        if field_name in row and pd.notna(row[field_name]):
+                            extra_fields[field_name] = row[field_name]
                 if extra_fields:
                     receipt_data["extra_fields"] = extra_fields
 
@@ -126,6 +153,36 @@ class MigrationService:
                 warnings.append(f"第 {idx+2} 行解析失败: {str(e)}")
 
         return receipts, warnings
+
+    @staticmethod
+    def _load_rules(
+        db: Session,
+        customer_id: int,
+        rules_file: Optional[str],
+        customer_slug: Optional[str],
+    ) -> Optional[dict]:
+        """加载迁移规则（优先显式路径，其次按客户 slug）。
+
+        规则文件不存在时不抛错（回退到标准提取），只记录返回 None。
+        """
+        if rules_file:
+            try:
+                return MigrationRuleEngine.load_rules(rules_file)
+            except FileNotFoundError:
+                return None
+
+        # 按客户 slug 解析路径
+        if not customer_slug:
+            customer = db.query(Customer).filter(Customer.id == customer_id).first()
+            customer_slug = customer.slug if customer else None
+
+        if customer_slug:
+            try:
+                return MigrationRuleEngine.load_rules_by_customer(customer_slug)
+            except FileNotFoundError:
+                return None
+
+        return None
 
     @staticmethod
     def _parse_billing_status(value) -> str:

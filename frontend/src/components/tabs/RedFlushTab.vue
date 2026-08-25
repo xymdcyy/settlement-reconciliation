@@ -120,7 +120,7 @@ const findBlue = async (row) => {
 const batchFindBlue = async () => {
   try {
     const receiptIds = selectedRows.value.map(r => r.id)
-    const res = await batchFindBlueInvoices(receiptIds)
+    const res = await batchFindBlueInvoices({ return_receipt_ids: receiptIds })
 
     // 更新表格数据
     res.data.results.forEach(result => {
@@ -140,7 +140,7 @@ const batchFindBlue = async () => {
 const generateConfirm = async () => {
   try {
     const receiptIds = selectedRows.value.map(r => r.id)
-    await downloadExcel('/red-flush/generate', receiptIds, `红冲确认单_${receiptIds.length}条.xlsx`)
+    await downloadExcel('/red-flush/generate', { return_receipt_ids: receiptIds }, `红冲确认单_${receiptIds.length}条.xlsx`)
     ElMessage.success('生成成功')
   } catch (error) {
     ElMessage.error('生成失败: ' + error.message)

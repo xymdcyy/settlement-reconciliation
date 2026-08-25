@@ -13,6 +13,7 @@ from app.schemas import (
     SuccessResponse,
 )
 from app.services.billing_service import BillingService
+from app.utils.excel_response import excel_response
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -34,23 +35,9 @@ def generate_billing_list(
     db: Session = Depends(get_db),
 ):
     """生成开票清单（导出 Excel）"""
-    from fastapi.responses import Response
-    from urllib.parse import quote
-
     try:
         output_bytes = BillingService.generate_billing_list(request.receipt_ids, db)
-
-        # 生成文件名
-        filename = f"开票清单_{len(request.receipt_ids)}条.xlsx"
-        encoded_filename = quote(filename)
-
-        return Response(
-            content=output_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-            },
-        )
+        return excel_response(output_bytes, f"开票清单_{len(request.receipt_ids)}条")
     except Exception as e:
         return ErrorResponse(status="error", message=str(e))
 

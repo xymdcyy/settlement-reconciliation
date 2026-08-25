@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import ErrorResponse, SuccessResponse
+from app.schemas import ErrorResponse, ReturnReceiptIdsRequest, SuccessResponse
 from app.services.red_flush_service import RedFlushService
+from app.utils.excel_response import excel_response
 
 router = APIRouter(prefix="/api/red-flush", tags=["red-flush"])
 
@@ -50,37 +51,23 @@ def find_blue_invoice(
 
 @router.post("/batch-find-blue")
 def batch_find_blue_invoices(
-    return_receipt_ids: list[int],
+    request: ReturnReceiptIdsRequest,
     db: Session = Depends(get_db),
 ):
     """批量查找蓝票"""
-    result = RedFlushService.batch_find_blue_invoices(return_receipt_ids, db)
+    result = RedFlushService.batch_find_blue_invoices(request.return_receipt_ids, db)
     return result
 
 
 @router.post("/generate")
 def generate_confirmation(
-    return_receipt_ids: list[int],
+    request: ReturnReceiptIdsRequest,
     db: Session = Depends(get_db),
 ):
     """生成确认单（导出 Excel 给税务）"""
-    from fastapi.responses import Response
-    from urllib.parse import quote
-
     try:
-        output_bytes = RedFlushService.generate_confirmation(return_receipt_ids, db)
-
-        # 生成文件名
-        filename = f"红冲确认单_{len(return_receipt_ids)}条.xlsx"
-        encoded_filename = quote(filename)
-
-        return Response(
-            content=output_bytes,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-            },
-        )
+        output_bytes = RedFlushService.generate_confirmation(request.return_receipt_ids, db)
+        return excel_response(output_bytes, f"红冲确认单_{len(request.return_receipt_ids)}条")
     except Exception as e:
         return ErrorResponse(status="error", message=str(e))
 

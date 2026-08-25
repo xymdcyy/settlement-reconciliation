@@ -100,7 +100,7 @@ class ExportService:
         """
         receipts = db.query(Receipt).filter(Receipt.id.in_(receipt_ids)).all() if receipt_ids else []
 
-        # 构建 DataFrame
+        # 构建 DataFrame（列名遵循"列名权威"：与原始台账一致）
         data = []
         for r in receipts:
             data.append({
@@ -110,7 +110,7 @@ class ExportService:
                 "签收金额": float(r.amount) if r.amount else 0,
                 "单价": float(r.unit_price) if r.unit_price else 0,
                 "结算客户名称": r.customer_name,
-                "签收日期": r.receipt_date,
+                "签收日期/完成日期": r.receipt_date,
                 "单据类型": r.doc_type,
                 "NC订单号": r.nc_order_no,
                 "产品线": r.product_line,
@@ -118,7 +118,7 @@ class ExportService:
 
         df = pd.DataFrame(data) if data else pd.DataFrame(columns=[
             "新方舟销售单号", "产品型号", "签收数量", "签收金额", "单价",
-            "结算客户名称", "签收日期", "单据类型", "NC订单号", "产品线",
+            "结算客户名称", "签收日期/完成日期", "单据类型", "NC订单号", "产品线",
         ])
         return ExportService._write_df_to_excel(df, "开票清单")
 

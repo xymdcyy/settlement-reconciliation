@@ -16,6 +16,7 @@ from app.schemas import (
     SuccessResponse,
 )
 from app.services.receipt_service import ReceiptService
+from app.utils.excel_response import excel_response
 
 router = APIRouter(prefix="/api/receipts", tags=["receipts"])
 
@@ -94,9 +95,6 @@ def export_receipts(
     db: Session = Depends(get_db),
 ):
     """导出台账为 Excel"""
-    from fastapi.responses import Response
-    from urllib.parse import quote
-
     output_bytes = ReceiptService.export_receipts(
         customer_id=customer_id,
         period=period,
@@ -105,17 +103,8 @@ def export_receipts(
         search=search,
     )
 
-    # 生成文件名
-    filename = f"台账_{customer_id}_{period or '全部'}.xlsx"
-    encoded_filename = quote(filename)
-
-    return Response(
-        content=output_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
-        },
-    )
+    filename = f"台账_{customer_id}_{period or '全部'}"
+    return excel_response(output_bytes, filename)
 
 
 @router.get("/pending-pool")

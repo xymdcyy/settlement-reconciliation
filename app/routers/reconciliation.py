@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Customer, Receipt
+from app.models import Customer
 from app.schemas import (
     HistoryResponse,
     MarkDiffRequest,
@@ -18,6 +18,7 @@ from app.schemas import (
 from app.services.match_service import MatchService
 from app.services.export_service import ExportService
 from app.services.reconciliation_upload_service import ReconciliationUploadService
+from app.services.pending_pool_service import PendingPoolService
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
@@ -43,31 +44,17 @@ def upload_statement(
         return {"status": "error", "message": str(e)}
 
 
-# 合法的差异类型（'none' 不允许，否则不会进入未决池）
-ALLOWED_DIFF_TYPES = {"time_diff", "price_diff", "qty_diff", "customer_not_received", "our_not_received"}
-
-
 @router.post("/mark-diff")
 def mark_diff(
     request: MarkDiffRequest,
     db: Session = Depends(get_db),
 ):
     """标记差异（时间差/真差异）→ 挂入未决池"""
-    if request.diff_type not in ALLOWED_DIFF_TYPES:
-        return {"status": "error", "message": f"非法差异类型: {request.diff_type}，可选: {sorted(ALLOWED_DIFF_TYPES)}"}
-
-    receipt = db.query(Receipt).filter(Receipt.id == request.receipt_id).first()
-    if not receipt:
-        return {"status": "error", "message": f"台账记录不存在: {request.receipt_id}"}
-
-    from datetime import datetime
-    receipt.diff_type = request.diff_type
-    receipt.diff_note = request.diff_note
-    receipt.resolved_period = None  # 挂入未决池
-    receipt.updated_at = datetime.now()
-    db.commit()
-
-    return {"status": "success", "message": "已标记差异，挂入未决池"}
+    try:
+        PendingPoolService.mark_diff(request.receipt_id, request.diff_type, request.diff_note, db)
+        return {"status": "success", "message": "已标记差异，挂入未决池"}
+    except ValueError as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/run", response_model=ReconciliationRunResponse)

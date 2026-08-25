@@ -221,6 +221,8 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+
 const props = defineProps({
   items: { type: Array, default: () => [] },
   total: { type: Number, default: 0 },
@@ -278,8 +280,6 @@ function onDrop(event, row) {
   const settlementRow = src.settlement ? src : row
   emit('drag-match', { receiptRow, settlementRow })
 }
-
-import { computed, ref } from 'vue'
 
 function rowClassName({ row }) {
   if (row.status === 'matched') return 'row-matched'

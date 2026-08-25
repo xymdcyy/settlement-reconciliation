@@ -230,10 +230,16 @@ class MatchService:
         if status_filter and status_filter != "all":
             query = query.filter(MatchResult.status == status_filter)
 
-        # 搜索
+        # 搜索：跨表查单号/型号（我方签收单号/型号 + 客户匹配键/型号 + 备注）
         if search:
+            query = query.outerjoin(Receipt, Receipt.id == MatchResult.receipt_id)
+            query = query.outerjoin(CustomerStatement, CustomerStatement.id == MatchResult.statement_id)
             query = query.filter(
-                (MatchResult.remark.contains(search))
+                (Receipt.receipt_no.contains(search))
+                | (Receipt.model.contains(search))
+                | (CustomerStatement.match_key.contains(search))
+                | (CustomerStatement.model.contains(search))
+                | (MatchResult.remark.contains(search))
             )
 
         total = query.count()

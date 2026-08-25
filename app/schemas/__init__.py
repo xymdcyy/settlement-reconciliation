@@ -219,6 +219,11 @@ class ImportBilledRequest(BaseModel):
 
 # ========== 红冲相关 ==========
 
+class ReturnReceiptIdsRequest(BaseModel):
+    """红冲操作请求（批量查找蓝票/生成确认单）"""
+    return_receipt_ids: list[int]
+
+
 class ReturnItem(BaseModel):
     """退货记录"""
     receipt_id: int

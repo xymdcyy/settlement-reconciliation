@@ -1,6 +1,6 @@
 <template>
   <div class="system-admin-page">
-    <el-page-header title="系统管理" />
+    <el-page-header title="系统管理" @back="goHome" />
 
     <el-tabs v-model="activeTab" class="mt-4">
       <el-tab-pane label="客户管理" name="customers">
@@ -102,8 +102,16 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer as apiDeleteCustomer } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const router = useRouter()
+
+// 返回工作台（系统管理页可能是首次进入/刷新的，无历史可回退，直接跳首页）
+const goHome = () => {
+  router.push('/')
+}
 
 const activeTab = ref('customers')
 const customers = ref([])

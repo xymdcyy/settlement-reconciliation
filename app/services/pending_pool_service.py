@@ -72,6 +72,41 @@ class PendingPoolService:
             return 0
 
     @staticmethod
+    def mark_diff(
+        receipt_id: int,
+        diff_type: str,
+        diff_note: Optional[str],
+        db: Session,
+    ) -> Receipt:
+        """
+        标记差异（时间差/真差异）→ 挂入未决池
+
+        Args:
+            receipt_id: 台账行 ID
+            diff_type: 差异类型（time_diff/price_diff/qty_diff/...）
+            diff_note: 差异说明
+
+        Raises:
+            ValueError: 非法差异类型或记录不存在
+        """
+        allowed = {"time_diff", "price_diff", "qty_diff", "customer_not_received", "our_not_received"}
+        if diff_type not in allowed:
+            raise ValueError(f"非法差异类型: {diff_type}，可选: {sorted(allowed)}")
+
+        receipt = db.query(Receipt).filter(Receipt.id == receipt_id).first()
+        if not receipt:
+            raise ValueError(f"台账记录不存在: {receipt_id}")
+
+        receipt.diff_type = diff_type
+        receipt.diff_note = diff_note
+        receipt.resolved_period = None  # 挂入未决池
+        receipt.updated_at = datetime.now()
+        db.commit()
+        db.refresh(receipt)
+
+        return receipt
+
+    @staticmethod
     def resolve_pending(
         receipt_id: int,
         resolved_period: str,
